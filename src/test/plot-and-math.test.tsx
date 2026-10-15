@@ -134,3 +134,13 @@ describe("calculation integrity (live mortgage/stats failures)", () => {
     expect(checkTables("| Name | Role |\n|---|---|\n| Ann | Dev |\n| Ann | Dev |")[0]?.code).toBe("table_duplicate");
   });
 });
+
+describe("live Bolt story fixture", () => {
+  it("flags the red scarf hung up in scene 18 and worn again in scene 20", () => {
+    const t = readFileSync(join(__dirname, "fixtures/bolt-story-live1.md"), "utf8");
+    const issues = checkPlot(t, "scene");
+    expect(issues.map((i) => i.items)).toEqual([[18, 20]]);
+    const fixed = t.replace("hangs his red scarf on a tiny peg", "loosens his red scarf");
+    expect(checkPlot(fixed, "scene")).toEqual([]);
+  });
+});
