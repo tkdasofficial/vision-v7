@@ -133,7 +133,7 @@ export async function runDeepPipeline(opts: {
     while (finish === "length" && continuations < L.maxContinuations && !overBudget()) {
       continuations++;
       stages.push("continue");
-      const r = await fix([...messages, { role: "assistant", content: clip(text, 40000) },
+      const r = await opts.call([...messages, { role: "assistant", content: clip(text, 40000) },
         { role: "user", content: "Continue exactly where you stopped. Do not repeat anything already written and keep the same numbering and format." }]);
       if (!r.ok) break;
       text += r.text;
