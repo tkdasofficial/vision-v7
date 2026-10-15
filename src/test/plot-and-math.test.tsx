@@ -3,6 +3,8 @@ import { render } from "@testing-library/react";
 import MarkdownReply from "@/components/chat/markdown-reply";
 import { checkPlot, checkObjectReuse, checkCameraDirection, checkCharacterState, checkTransitions } from "@/lib/ai/deep/plot";
 import { normalizeMath } from "@/lib/math";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const scene = (n: number, body: string) => `Scene ${n}: ${body}`;
 const filler = (n: number) => scene(n, `Bolt, the small silver robot with a blue visor, walks through the quiet city. Camera: steady wide shot.`);
@@ -95,5 +97,15 @@ describe("maths rendering", () => {
   it("normalizeMath leaves code untouched", () => {
     expect(normalizeMath("`\\(x\\)` and \\(y\\)")).toBe("`\\(x\\)` and $y$");
     expect(normalizeMath("```py\nprint('\\(z\\)')\n```")).toContain("\\(z\\)");
+  });
+
+  it("renders the real compound-interest answer (\\[ \\] blocks in lists, \\$ amounts in a table) without raw source", () => {
+    const md = readFileSync(join(__dirname, "fixtures/compound-answer.md"), "utf8");
+    const { container } = render(<MarkdownReply>{md}</MarkdownReply>);
+    expect(container.querySelectorAll(".katex-display").length).toBe(3);
+    expect(container.textContent).not.toMatch(/\\\[|\\\(|\\frac|\$\$/);
+    expect(container.querySelector("pre")).toBeNull();
+    expect(container.querySelector("table")?.textContent).toContain("$12,597.12");
+    expect(container.querySelectorAll("li .katex-display").length).toBe(2);
   });
 });
