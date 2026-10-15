@@ -446,7 +446,7 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
       const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
       if (!deep && !stopped && !reply.document && finalText && !reduce) {
         // Presentation only: reveal the finished answer in logical units at a bounded pace.
-        setTaskState((t) => (t ? { ...t, stage: "rendering", message: undefined } : t));
+        setTaskState(null); // status line disappears as the answer starts rendering
         const steps = revealPlan(replyText);
         setIsTyping(false);
         for (const st of steps.slice(0, -1)) {
