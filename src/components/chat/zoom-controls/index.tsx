@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 export function ZoomControls({ percent, canOut, canIn, onOut, onIn, onReset, className, buttonClassName }: {
   percent: number; canOut: boolean; canIn: boolean; onOut: () => void; onIn: () => void; onReset: () => void; className?: string; buttonClassName?: string;
 }) {
-  return <div role="group" aria-label="Zoom" className={cn("flex items-center gap-0.5", className)}>
+  return <div role="group" aria-label="Zoom" className={cn("hidden items-center gap-0.5 md:flex", className)}>
     <Button variant="ghost" size="icon" className={cn("size-9 rounded-full md:size-8 md:rounded-md", buttonClassName)} onClick={onOut} disabled={!canOut} aria-label="Zoom out" title="Zoom out"><ZoomOut /></Button>
     <Button variant="ghost" className={cn("h-9 min-w-12 rounded-full px-1 font-mono text-xs tabular-nums md:h-8 md:rounded-md", buttonClassName)} onClick={onReset} aria-label="Reset zoom" title="Reset zoom">{percent}%</Button>
     <Button variant="ghost" size="icon" className={cn("size-9 rounded-full md:size-8 md:rounded-md", buttonClassName)} onClick={onIn} disabled={!canIn} aria-label="Zoom in" title="Zoom in"><ZoomIn /></Button>
