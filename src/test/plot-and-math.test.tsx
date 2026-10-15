@@ -144,3 +144,12 @@ describe("live Bolt story fixture", () => {
     expect(checkPlot(fixed, "scene")).toEqual([]);
   });
 });
+
+describe("live stats answer fixture", () => {
+  it("passes validation (no false duplicate-row failure) and is not web fact-checked", () => {
+    const req = "For the data set 2, 4, 4, 4, 5, 5, 7, 9 compute the mean, median, mode, range, population variance and population standard deviation. Show the formulas and every calculation step.";
+    const t = readFileSync(join(__dirname, "fixtures/stats-answer.md"), "utf8");
+    expect(validateCandidate(t, analyzeRequest(req))).toEqual([]);
+    expect(needsFactCheck(req, t)).toBe(false);
+  });
+});
