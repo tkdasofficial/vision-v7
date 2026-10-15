@@ -8,6 +8,7 @@ import { useCopy } from "@/components/chat/use-copy";
 import CodeSource from "@/components/chat/code-source";
 import PreviewPane from "@/components/chat/preview-pane";
 import { cn } from "@/lib/utils";
+import { ZoomControls } from "@/components/chat/zoom-controls";
 import { codeLanguageLabel } from "@/lib/code-language-label";
 
 type Props = { code: string; language?: string; filename?: string; html?: string; previewHTML?: string; iframeRef?: Ref<HTMLIFrameElement>; initialView?: "code" | "preview" | "split"; copyText?: string; copyHtml?: () => string | undefined; onClose: () => void };
@@ -57,7 +58,8 @@ export default function FullScreenCodeView({ code, language, filename, previewHT
       <header className="code-viewer-header absolute inset-x-0 top-0 z-10 grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-1 px-2 pb-4 pt-[max(8px,env(safe-area-inset-top))] md:static md:flex md:min-h-14 md:shrink-0 md:items-center md:border-b md:border-border md:py-1">
         <Button variant="ghost" size="icon" className="code-viewer-action shrink-0 rounded-full md:rounded-md" onClick={onClose} aria-label="Back" title="Back to chat"><ArrowLeft /></Button>
         <DialogTitle aria-label={name} title={name} className="min-w-0 truncate px-1 pt-2.5 font-mono text-sm font-medium md:flex-1 md:pt-0">{codeLanguageLabel(language)}</DialogTitle>
-        <div className="flex shrink-0 gap-1">
+        <div className="flex shrink-0 items-center gap-1">
+          {view !== "preview" && <ZoomControls className="md:hidden" buttonClassName="code-viewer-action" percent={Math.round(size / BASE * 100)} canOut={size > MIN} canIn={size < MAX} onOut={() => setSize((s) => clamp(s - 1))} onIn={() => setSize((s) => clamp(s + 1))} onReset={() => setSize(BASE)} />}
           <Button variant="ghost" size="icon" className="code-viewer-action rounded-full md:hidden" disabled={!preview} aria-label={view === "preview" ? "Show code" : "Preview"} title={view === "preview" ? "Show code" : "Preview"} aria-pressed={view === "preview"} onClick={() => setView(view === "preview" ? "code" : "preview")}>{view === "preview" ? <Code2 /> : <Eye />}</Button>
           <Button variant="ghost" size="icon" className="code-viewer-action rounded-full md:rounded-md" onClick={() => downloadText(code, name)} aria-label={`Download ${name}`} title="Download file"><Download /></Button>
           <Button variant="ghost" size="icon" className="code-viewer-action rounded-full md:rounded-md" onClick={() => copy(copyText ?? code, copyHtml?.())} aria-label={copied ? "Copied" : "Copy"} title={copied ? "Copied" : "Copy code"}>{copied ? <Check /> : <Copy />}</Button>

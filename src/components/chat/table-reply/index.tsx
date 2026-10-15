@@ -1,4 +1,5 @@
-import { Children, isValidElement, useState, type ReactNode } from "react";
+import { Children, isValidElement, useRef, useState, type ReactNode } from "react";
+import { ZoomControls, usePinchZoom } from "@/components/chat/zoom-controls";
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, Check, Copy, Download, Expand, Table2 } from "lucide-react";
 import { Dialog, DialogPortal, DialogTitle } from "@/components/ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -49,13 +50,13 @@ function columnAlignments(data: TableData): Align[] {
 }
 const ALIGN: Record<Align, string> = { left: "text-left", right: "text-right tabular-nums", center: "text-center" };
 
-function TableGrid({ data, sort, onSort, full }: { data: TableData; sort: TableSort; onSort: (column: number) => void; full?: boolean }) {
+function TableGrid({ data, sort, onSort, full, zoom = 1 }: { data: TableData; sort: TableSort; onSort: (column: number) => void; full?: boolean; zoom?: number }) {
   const order = data.rows.map((_, index) => index);
   if (sort) order.sort((a, b) => (sort.direction === "ascending" ? 1 : -1) * compareTableValues(data.values[a]?.[sort.column] ?? "", data.values[b]?.[sort.column] ?? "") || a - b);
   const align = columnAlignments(data);
   const width = full ? "min-w-32 max-w-[28rem]" : "min-w-28 max-w-80";
   return (
-    <table className="m-0 w-max min-w-full border-separate border-spacing-0 text-sm leading-6">
+    <table style={zoom !== 1 ? { zoom } : undefined} className="m-0 w-max min-w-full border-separate border-spacing-0 text-sm leading-6">
       <thead>
         <tr>{data.headers.map((cell, index) => {
           const active = sort?.column === index;
@@ -77,6 +78,10 @@ function TableGrid({ data, sort, onSort, full }: { data: TableData; sort: TableS
 export default function TableReply({ children, node, markdown }: { children: ReactNode; node?: Node; markdown: string }) {
   const [sort, setSort] = useState<TableSort>(null);
   const [open, setOpen] = useState(false);
+  const [zoom, setZoomRaw] = useState(1);
+  const setZoom = (value: number) => setZoomRaw(Math.round(Math.min(2.5, Math.max(0.5, value)) * 20) / 20);
+  const fullArea = useRef<HTMLDivElement>(null);
+  usePinchZoom(fullArea, () => zoom, setZoom, 0.1);
   const { copied, copy } = useCopy();
   const sections = elementChildren(children);
   const header = sections.find((section) => section.type === "thead");
@@ -121,13 +126,14 @@ export default function TableReply({ children, node, markdown }: { children: Rea
           <header className="flex min-h-14 shrink-0 items-center gap-1 border-b border-border px-2 pt-[env(safe-area-inset-top)]">
             <Button variant="ghost" size="icon" className="shrink-0 rounded-full md:rounded-md" onClick={() => setOpen(false)} aria-label="Back to chat" title="Back to chat"><ArrowLeft /></Button>
             <DialogTitle className="min-w-0 flex-1 truncate px-1 font-mono text-sm font-medium">Table <span className="font-sans text-xs font-normal text-muted-foreground">· {rows.length} rows · {headers.length} columns</span></DialogTitle>
-            <div className="flex shrink-0 gap-1">
+            <div className="flex shrink-0 items-center gap-1">
+              <ZoomControls percent={Math.round(zoom * 100)} canOut={zoom > 0.5} canIn={zoom < 2.5} onOut={() => setZoom(zoom - 0.1)} onIn={() => setZoom(zoom + 0.1)} onReset={() => setZoom(1)} />
               <Button variant="ghost" size="icon" className="rounded-full md:rounded-md" onClick={download} aria-label="Download table CSV" title="Download table CSV"><Download /></Button>
               <Button variant="ghost" size="icon" className="rounded-full md:rounded-md" onClick={() => copy(markdown)} aria-label={copied ? "Copied" : "Copy table Markdown"} title={copied ? "Copied" : "Copy table Markdown"}>{copied ? <Check /> : <Copy />}</Button>
             </div>
           </header>
-          <div role="region" aria-label="Scrollable table" tabIndex={0} className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
-            <TableGrid data={data} sort={sort} onSort={toggleSort} full />
+          <div ref={fullArea} role="region" aria-label="Scrollable table" tabIndex={0} className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+            <TableGrid data={data} sort={sort} onSort={toggleSort} full zoom={zoom} />
           </div>
         </DialogPrimitive.Content>
       </DialogPortal></Dialog>}
