@@ -1,7 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-
-// Runs before paint in the browser so a search opening never flashes the drawer first.
-const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffect;
+import { useEffect, useRef, useState } from "react";
 import { Check, MessageSquare, Pencil, Pin, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChatHistory } from "@/context/ChatHistoryContext";
@@ -21,7 +18,7 @@ type Props = {
 };
 
 /** Shared full-screen navigation surface, also used by the preserved /search URL. */
-export default function AppDrawerView({ onClose, onNewChat, onSelectChat, activeChatId, initialSearch = false, onSearchBack, resetKey = 0, onOpenSearch }: Props & { onOpenSearch?: () => void; initialSearch?: boolean; onSearchBack?: () => void; resetKey?: number }) {
+export default function AppDrawerView({ onClose, onNewChat, onSelectChat, activeChatId, initialSearch = false, onSearchBack, resetKey = 0 }: Props & { initialSearch?: boolean; onSearchBack?: () => void; resetKey?: number }) {
   const { history, renameChat } = useChatHistory();
   const [searching, setSearching] = useState(initialSearch);
   // Drawer content stays mounted during the morph so its exit animation is visible.
@@ -31,7 +28,6 @@ export default function AppDrawerView({ onClose, onNewChat, onSelectChat, active
   const morphTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const openSearch = () => {
-    if (onOpenSearch) { onOpenSearch(); return; }
     setMorphing(true);
     setScrolled(false);
     setSearching(true);
@@ -56,7 +52,7 @@ export default function AppDrawerView({ onClose, onNewChat, onSelectChat, active
   const [editValue, setEditValue] = useState("");
   // The drawer is kept between openings: each close (resetKey) or pull-down Search request starts it fresh.
   const firstRun = useRef(true);
-  useBeforePaint(() => {
+  useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return; }
     if (morphTimer.current) clearTimeout(morphTimer.current);
     setMorphing(false); setScrolled(false); setEditingId(null);
