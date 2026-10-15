@@ -8,5 +8,5 @@ export default function DrawerPage({ initialSearch = false }: { initialSearch?: 
   const candidate = safeReturnPath(new URLSearchParams(location.searchStr).get("returnTo"));
   const returnTo = candidate.startsWith("/drawer") || candidate.startsWith("/search") ? "/chat" : candidate;
   const activeChatId = returnTo.match(/^\/chat\/([^/?]+)$/)?.[1];
-  return <main aria-label="App drawer"><AppDrawerView initialSearch={initialSearch} activeChatId={activeChatId} onClose={() => navigate(returnTo)} onNewChat={() => navigate("/chat")} onSelectChat={(id) => navigate(`/chat/${id}`)} /></main>;
+  return <main aria-label="App drawer"><AppDrawerView initialSearch={initialSearch} activeChatId={activeChatId} onClose={() => navigate(returnTo)} onNewChat={() => navigate("/chat")} onSelectChat={(id) => navigate(`/chat/${id}`)} onOpenSearch={() => navigate(`/search?returnTo=${encodeURIComponent(returnTo)}`)} /></main>;
 }
