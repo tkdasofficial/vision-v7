@@ -230,7 +230,7 @@ export const Route = createFileRoute("/api/chat")({
               // Bounded generate → validate → correct loop: each correction quotes the exact failed checks, models rotate,
               // and an issue only counts as resolved when a later validation passes.
               const { AI_LIMITS } = await import("@/lib/ai/limits");
-              const maxAttempts = Math.max(1, Math.min(5, (AI_LIMITS as any).defaultCorrections ?? 4) + 1);
+              const maxAttempts = Math.max(1, Math.min(5, AI_LIMITS.defaultCorrections) + 1);
               let failuresInRow = 0;
               while (attempt < maxAttempts && models.length && failuresInRow < models.length) {
                 const t = models[(attempt + failuresInRow) % models.length];

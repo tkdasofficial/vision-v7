@@ -2,6 +2,8 @@
 export const AI_LIMITS = {
   /** Max characters of conversation history sent to a model (system prompt excluded). */
   historyChars: 60_000,
+  /** Default-chat correction rounds after the first answer (total attempts = this + 1, capped at 5). */
+  defaultCorrections: 4,
   /** Max messages considered before budgeting. */
   historyMessages: 40,
   /** Max characters kept per single message. */
