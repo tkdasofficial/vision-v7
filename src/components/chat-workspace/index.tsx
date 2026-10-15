@@ -17,6 +17,8 @@ import ChatInput from "@/components/chat-input";
 import ChatMessage from "@/components/chat-message";
 import EmptyState from "@/components/empty-state";
 import TypingIndicator, { detectPhase, type ThinkingPhase } from "@/components/typing-indicator";
+import { applyTaskEvent, STAGE_LABELS, type TaskState } from "@/lib/ai/task-events";
+import { revealPlan } from "@/lib/ai/render-scheduler";
 import { getCategory } from "@/lib/file-converter";
 import { runJob, listJobs, fetchJob, cancelJob } from "@/lib/builder/jobs-client";
 import { isTerminal } from "@/lib/builder/statuses";
@@ -57,6 +59,7 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
   }), []);
   const initialMsgCount = useRef((initialMessages || []).length);
   const [thinkingPhase, setThinkingPhase] = useState<ThinkingPhase>("thinking");
+  const [taskState, setTaskState] = useState<TaskState | null>(null);
   const [chatId, setChatId] = useState<string | null>(externalChatId || null);
   const [chatTitle, setChatTitle] = useState<string | null>(null);
   // Mode belongs to the conversation: restored on open/reload, never reset after a reply.
@@ -296,6 +299,7 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
     // Detect phase from content
     const phase = detectPhase(content, tool?.id);
     setThinkingPhase("thinking"); // Always start with thinking
+    setTaskState(null);
     setIsTyping(true);
 
     // Save first message as chat history entry
@@ -406,6 +410,7 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
         }, 2600);
       }, 1400) : undefined;
       const stopDeepTimers = () => { if (deepShow) clearTimeout(deepShow); if (deepTicker) clearInterval(deepTicker); };
+      let taskRef: TaskState | null = null;
       let meta: { executionMode: string; output: string } = { executionMode: "default", output: "chat" };
       const ctrl = new AbortController();
       abortRef.current = ctrl; setStreaming(true);
@@ -416,11 +421,13 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
           if (!deepTokens) { deepTokens = true; if (!deepReal) setDeepStage("crafting"); }
           return; // the finished answer is shown in one piece
         }
-        if (!started) { started = true; clearTimeout(phaseTimer); setIsTyping(false); }
+        if (!started) { started = true; clearTimeout(phaseTimer); }
+        return; // gated: the validated answer is revealed progressively once the task completes
         setMessages((prev) => prev.some((m) => m.id === replyId)
           ? prev.map((m) => (m.id === replyId ? { ...m, content: visible } : m))
           : [...prev, { id: replyId, role: "assistant", content: visible, timestamp: new Date(), toolId: tool?.id }]);
       }, tool?.id, { mode: taskMode, webSearch: forceSearch, onMeta: (m) => { meta = m; }, signal: ctrl.signal, requestId: replyId, conversationId: chatId ?? undefined,
+        onTask: (ev) => { taskRef = applyTaskEvent(taskRef, ev, replyId); setTaskState(taskRef); },
         onStatus: (st, detail) => { const ds = STATUS_MAP[st]; if (!deep || !ds) return; deepReal = true; lastDeep = { stage: ds, detail }; setMessages((prev) => prev.some((m) => m.id === replyId) ? prev.map((m) => (m.id === replyId ? { ...m, deep: { stage: ds, detail } } : m)) : prev); } }).finally(() => { stopDeepTimers(); if (abortRef.current === ctrl) abortRef.current = null; setStreaming(false); });
       const stopped = ctrl.signal.aborted;
       const replyText = finalText || (stopped ? "Stopped." : "I couldn't come up with an answer. Please try again.");
@@ -433,13 +440,25 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
           reply = { ...reply, document: await saveDocumentFn({ data: { title, content: finalText } }) };
         } catch { /* keep the report as a normal chat reply */ }
       }
-      setMessages((prev) => prev.some((m) => m.id === replyId)
-        ? prev.map((m) => (m.id === replyId ? reply : m))
-        : [...prev, reply]);
-      clearTimeout(phaseTimer);
-      setIsTyping(false);
-      // Save the reply even if this screen was replaced while it streamed.
+      // Save the full reply first, even if this screen is replaced while it renders.
       if (sessionId) updateChatMessages(sessionId, [...messages, userMsg, reply]);
+      clearTimeout(phaseTimer);
+      const put = (r: ChatMessageType) => setMessages((prev) => prev.some((m) => m.id === replyId) ? prev.map((m) => (m.id === replyId ? r : m)) : [...prev, r]);
+      const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      if (!deep && !stopped && !reply.document && finalText && !reduce) {
+        // Presentation only: reveal the finished answer in logical units at a bounded pace.
+        setTaskState((t) => (t ? { ...t, stage: "rendering", message: undefined } : t));
+        const steps = revealPlan(replyText);
+        setIsTyping(false);
+        for (const st of steps.slice(0, -1)) {
+          put({ ...reply, content: replyText.slice(0, st.upto) });
+          await new Promise((res) => setTimeout(res, st.delayMs));
+          if (abortRef.current && abortRef.current !== ctrl) break; // a newer request took over
+        }
+      }
+      put(reply);
+      setIsTyping(false);
+      setTaskState(null);
     } catch (e: any) {
       if (e?.name === "AbortError") { clearTimeout(phaseTimer); setIsTyping(false); return; }
       const errMsg: ChatMessageType = { id: (Date.now() + 1).toString(), role: "assistant", content: `Sorry, an error occurred: ${e.message}`, timestamp: new Date() };
