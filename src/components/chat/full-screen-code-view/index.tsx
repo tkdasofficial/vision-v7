@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type Ref } from "react";
-import { ArrowLeft, Check, ChevronDown, ChevronUp, Code2, Columns2, Copy, Download, Eye, ListOrdered, Search, WrapText, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronUp, Code2, Columns2, Copy, Download, Eye, ListOrdered, Search, WrapText, X } from "lucide-react";
 import { Dialog, DialogPortal, DialogTitle } from "@/components/ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { useCopy } from "@/components/chat/use-copy";
 import CodeSource from "@/components/chat/code-source";
 import PreviewPane from "@/components/chat/preview-pane";
 import { cn } from "@/lib/utils";
+import { ZoomControls } from "@/components/chat/zoom-controls";
 import { codeLanguageLabel } from "@/lib/code-language-label";
 
 type Props = { code: string; language?: string; filename?: string; html?: string; previewHTML?: string; iframeRef?: Ref<HTMLIFrameElement>; initialView?: "code" | "preview" | "split"; copyText?: string; copyHtml?: () => string | undefined; onClose: () => void };
@@ -69,9 +70,6 @@ export default function FullScreenCodeView({ code, language, filename, previewHT
           <Button variant="ghost" size="icon" className="size-8 rounded-md" aria-label="Find in code" title="Find in code" aria-pressed={searchOpen} onClick={() => setSearchOpen((open) => !open)}><Search /></Button>
           <Button variant="ghost" size="icon" className={cn("size-8 rounded-md", wrap && "bg-accent")} aria-label="Wrap lines" title="Wrap lines" aria-pressed={wrap} onClick={() => setWrap((value) => !value)}><WrapText /></Button>
           <Button variant="ghost" size="icon" className={cn("size-8 rounded-md", numbers && "bg-accent")} aria-label="Line numbers" title="Line numbers" aria-pressed={numbers} onClick={() => setNumbers((value) => !value)}><ListOrdered /></Button>
-          <Button variant="ghost" size="icon" className="size-8 rounded-md" onClick={() => setSize((s) => clamp(s - 1))} disabled={size <= MIN} aria-label="Zoom out" title="Zoom out"><ZoomOut /></Button>
-          <Button variant="ghost" className="h-8 min-w-12 rounded-md px-1 font-mono text-xs" onClick={() => setSize(BASE)} aria-label="Reset zoom" title="Reset zoom">{Math.round(size / BASE * 100)}%</Button>
-          <Button variant="ghost" size="icon" className="size-8 rounded-md" onClick={() => setSize((s) => clamp(s + 1))} disabled={size >= MAX} aria-label="Zoom in" title="Zoom in"><ZoomIn /></Button>
         </div>}
       </div>
       {searchOpen && view !== "preview" && <div className="hidden shrink-0 items-center gap-1 border-b border-border px-3 py-2 md:flex">
@@ -83,7 +81,7 @@ export default function FullScreenCodeView({ code, language, filename, previewHT
         <Button variant="ghost" size="icon" className="size-8" aria-label="Close search" title="Close search" onClick={() => { setSearchOpen(false); setQuery(""); }}><X /></Button>
       </div>}
       <div className={cn("grid min-h-0 flex-1 pt-[max(64px,calc(env(safe-area-inset-top)+56px))] md:pt-0", view === "split" ? "grid-rows-2 md:grid-cols-2 md:grid-rows-1" : "grid-cols-1")}>
-        {view !== "preview" && <div ref={area} aria-label="Code content" tabIndex={0} className="mobile-code-source min-h-0 min-w-0 overflow-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"><CodeSource code={code} language={language} size={size} wrap={wrap} lineNumbers={numbers} query={query} activeLine={activeLine} /></div>}
+        {view !== "preview" && <div className="relative min-h-0 min-w-0"><ZoomControls className="absolute bottom-3 right-3 z-10 rounded-full border border-border bg-background/90 p-0.5 shadow-md backdrop-blur" percent={Math.round(size / BASE * 100)} canOut={size > MIN} canIn={size < MAX} onOut={() => setSize((s) => clamp(s - 1))} onIn={() => setSize((s) => clamp(s + 1))} onReset={() => setSize(BASE)} /><div ref={area} aria-label="Code content" tabIndex={0} className="mobile-code-source h-full min-h-0 min-w-0 overflow-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"><CodeSource code={code} language={language} size={size} wrap={wrap} lineNumbers={numbers} query={query} activeLine={activeLine} /></div></div>}
         {view !== "code" && preview && <div className="min-h-0 min-w-0 border-t border-border md:border-l md:border-t-0"><PreviewPane html={preview} iframeRef={iframeRef} title={`${name} preview`} /></div>}
       </div>
        <footer className="hidden h-8 shrink-0 items-center justify-between gap-2 border-t border-border px-3 font-mono text-[11px] text-muted-foreground md:flex"><span className="truncate">{language || "Plain text"} · {code.split("\n").length} lines</span><span className="shrink-0">{new TextEncoder().encode(code).length.toLocaleString()} bytes</span></footer>
