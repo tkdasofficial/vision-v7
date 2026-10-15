@@ -33,24 +33,43 @@ type TableData = {
   values: string[][];
 };
 
+const NUMERIC = /^[\s(+−-]*[$€£¥₹]?\s*[+−-]?(\d{1,3}([,\s]\d{3})+|\d+)?([.,]\d+)?\s*(%|[kKmMbB]|[$€£¥₹])?\)?\s*$/;
+function isNumeric(value: string) {
+  const v = value.trim();
+  return v !== "" && /\d/.test(v) && NUMERIC.test(v);
+}
+type Align = "left" | "right" | "center";
+function columnAlignments(data: TableData): Align[] {
+  return data.headers.map((cell, column) => {
+    const explicit = cell.props.style?.textAlign;
+    if (explicit === "right" || explicit === "center") return explicit;
+    const filled = data.values.map((row) => row[column] ?? "").filter((v) => v.trim() !== "" && !/^[-–—]$/.test(v.trim()));
+    return filled.length > 0 && filled.every(isNumeric) ? "right" : "left";
+  });
+}
+const ALIGN: Record<Align, string> = { left: "text-left", right: "text-right tabular-nums", center: "text-center" };
+
 function TableGrid({ data, sort, onSort, full }: { data: TableData; sort: TableSort; onSort: (column: number) => void; full?: boolean }) {
   const order = data.rows.map((_, index) => index);
   if (sort) order.sort((a, b) => (sort.direction === "ascending" ? 1 : -1) * compareTableValues(data.values[a]?.[sort.column] ?? "", data.values[b]?.[sort.column] ?? "") || a - b);
+  const align = columnAlignments(data);
+  const width = full ? "min-w-32 max-w-[28rem]" : "min-w-28 max-w-80";
   return (
-    <table className={`m-0 border-collapse text-sm leading-relaxed w-max min-w-full`}>
-      <thead className="sticky top-0 z-10 bg-muted">
+    <table className="m-0 w-max min-w-full border-separate border-spacing-0 text-sm leading-6">
+      <thead>
         <tr>{data.headers.map((cell, index) => {
           const active = sort?.column === index;
           const Icon = active ? sort.direction === "ascending" ? ArrowUp : ArrowDown : ArrowUpDown;
           const label = data.labels[index] || `Column ${index + 1}`;
-          return <th key={index} scope="col" aria-sort={active ? sort.direction : "none"} className="min-w-28 max-w-80 border-b border-border p-0 text-left font-semibold">
-            <Button variant="ghost" className="h-auto min-h-10 w-full justify-between whitespace-normal rounded-none px-3 py-2 text-left" aria-label={`Sort by ${label}`} title={`Sort by ${label}`} onClick={() => onSort(index)}>
-              <span className="min-w-0 break-words">{cleanCell(cell.props.children)}</span><Icon className="shrink-0 text-muted-foreground" aria-hidden="true" />
+          const right = align[index] === "right";
+          return <th key={index} scope="col" aria-sort={active ? sort.direction : "none"} className={`sticky top-0 z-10 ${width} border-b border-r border-border bg-muted p-0 align-bottom font-semibold text-foreground last:border-r-0`}>
+            <Button variant="ghost" className={`h-auto min-h-11 w-full gap-2 whitespace-normal rounded-none px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground ${right ? "flex-row-reverse justify-start text-right" : align[index] === "center" ? "justify-center text-center" : "justify-between text-left"} ${active ? "text-foreground" : ""}`} aria-label={`Sort by ${label}`} title={`Sort by ${label}`} onClick={() => onSort(index)}>
+              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{cleanCell(cell.props.children)}</span><Icon className={`size-3.5 shrink-0 ${active ? "text-primary" : "opacity-60"}`} aria-hidden="true" />
             </Button>
           </th>;
         })}</tr>
       </thead>
-      <tbody>{order.map((rowIndex) => <tr key={rowIndex} className="border-b border-border last:border-0 even:bg-muted/20 hover:bg-accent/40 focus-within:bg-accent/40">{elementChildren(data.rows[rowIndex]?.props.children).map((cell, column) => <td key={column} className={`min-w-28 max-w-80 break-words px-3 py-2.5 align-top [overflow-wrap:anywhere] ${cell.props.style?.textAlign === "right" ? "text-right tabular-nums" : cell.props.style?.textAlign === "center" ? "text-center" : "text-left"}`}>{cleanCell(cell.props.children)}</td>)}</tr>)}</tbody>
+      <tbody>{order.map((rowIndex) => <tr key={rowIndex} className="group even:bg-muted/30 hover:bg-accent/50">{elementChildren(data.rows[rowIndex]?.props.children).map((cell, column) => <td key={column} className={`${width} whitespace-pre-wrap break-words border-b border-r border-border px-3 py-2.5 align-top [overflow-wrap:anywhere] last:border-r-0 group-last:border-b-0 ${ALIGN[align[column] ?? "left"]}`}>{cleanCell(cell.props.children)}</td>)}</tr>)}</tbody>
     </table>
   );
 }
