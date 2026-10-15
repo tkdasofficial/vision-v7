@@ -1,6 +1,10 @@
 import { Children, isValidElement, useMemo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { normalizeMath } from "@/lib/math";
 import CodeBlock from "@/components/chat/code";
 import TextCopyBox from "@/components/chat/text-copy-box";
 import CopyReadyBox from "@/components/chat/markdown";
@@ -40,6 +44,6 @@ const components: Components = {
 };
 
 export default function MarkdownReply({ children }: { children: string }) {
-  const source = useMemo(() => dedupeDeliverables(children), [children]);
-  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkCallouts]} components={{ ...components, table: ({ children: tableChildren, node }) => <TableReply node={node} markdown={source.slice(node?.position?.start.offset ?? 0, node?.position?.end.offset ?? source.length)}>{tableChildren}</TableReply> }}>{source}</ReactMarkdown>;
+  const source = useMemo(() => normalizeMath(dedupeDeliverables(children)), [children]);
+  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath, remarkCallouts]} rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: "ignore", output: "htmlAndMathml" }]]} components={{ ...components, table: ({ children: tableChildren, node }) => <TableReply node={node} markdown={source.slice(node?.position?.start.offset ?? 0, node?.position?.end.offset ?? source.length)}>{tableChildren}</TableReply> }}>{source}</ReactMarkdown>;
 }
