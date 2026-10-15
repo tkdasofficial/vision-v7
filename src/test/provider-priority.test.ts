@@ -58,7 +58,7 @@ describe("provider priority", () => {
 
   it("all fail → truthful error with no secret", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("no", { status: 403 }));
-    await expect(complete("s", "u", { models: TEXT_CHAIN })).rejects.toThrow(/couldn't answer/);
+    await expect(complete("s", "u", { models: TEXT_CHAIN })).rejects.toThrow(/^AI (couldn.t answer|is busy)/);
   });
 
   it("categorises failures", () => {
