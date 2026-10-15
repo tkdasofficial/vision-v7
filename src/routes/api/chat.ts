@@ -198,9 +198,10 @@ export const Route = createFileRoute("/api/chat")({
             const emit = taskEmitter(taskId, send);
             const ping = setInterval(() => send(": working\n\n"), 8000);
             try {
-              emit("thinking", "Understanding the request");
-              await runSearch((stage, msg) => emit(stage, msg));
+              emit("thinking");
               const analysis = analyzeRequest(lastText);
+              emit(lastHasMedia ? "analyzing_files" : analysis.items || analysis.complex ? "analyzing_requirements" : "understanding_request", analysis.items ? `${analysis.items.count} ${analysis.items.noun}${analysis.items.count === 1 ? "" : "s"} requested` : undefined);
+              await runSearch((stage, msg) => emit(stage, msg));
               const msgs = [{ role: "system", content: system }, ...messages];
               let best: { text: string; issues: number } | null = null;
               let lastStatus = 502;
@@ -209,28 +210,28 @@ export const Route = createFileRoute("/api/chat")({
                 if (request.signal.aborted) { emit("cancelled"); return; }
                 if (attempt > 0) emit("retrying", `Trying ${t.label}`);
                 attempt++;
-                emit("writing");
+                emit("reasoning");
                 const r = await streamFromProvider(t, best ? [...msgs, { role: "assistant", content: best.text }, { role: "user", content: "Your previous answer failed these checks; return the complete corrected answer only." }] : msgs, { maxTokens: deep ? 8192 : 4096, deep }, request.signal);
                 if (!r.ok) { lastStatus = r.status; if (r.status === 499) { emit("cancelled"); return; } console.error("[chat]", t.provider, t.model, r.status, r.reason); continue; }
                 let c: { text: string; finishReason: string | null };
                 try { c = await collectStream(r.body); } catch (e: any) { if (request.signal.aborted) { emit("cancelled"); return; } console.error("[chat]", t.label, e?.message); continue; }
                 const text = c.text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
                 if (!text) { console.error("[chat]", t.provider, t.model, "empty answer"); continue; }
-                emit("validating", "Checking the answer against the request");
+                // Deterministic checks only (item count/sequence, completeness, tables, code, JSON) — no factual-accuracy claim.
+                emit(analysis.items ? "checking_completeness" : "validating_requirements", analysis.items ? `Checking all ${analysis.items.count} ${analysis.items.noun}s are present` : undefined);
                 const issues = validateCandidate(text, analysis, c.finishReason);
                 if (!best || issues.length < best.issues) { best = { text, issues: issues.length }; usedModel = t.label; }
                 if (!issues.length) break;
                 emit("detecting_issues", issues[0].message.slice(0, 120));
-                emit("correcting", "Fixing the detected issues");
+                if (models.indexOf(t) < models.length - 1) emit("fixing_issues");
               }
               if (!best) {
                 emit("failed", lastStatus === 429 ? "AI is busy" : "No answer was produced");
                 send(`data: ${JSON.stringify({ choices: [{ delta: { content: lastStatus === 429 ? "AI is busy right now. Please try again in a moment." : "AI couldn't answer right now." } }] })}\n\n`);
                 return;
               }
-              emit("finalizing", "Preparing output");
+              emit("finalizing");
               const answer = best.issues ? `${best.text}\n\n> [!NOTE]\n> Verification note: some automatic checks on this answer could not be fully resolved.` : best.text;
-              emit("completed");
               console.log("[chat:task]", JSON.stringify({ user: caller.user.id, taskId, model: usedModel, attempts: attempt, unresolved: best.issues, search: searchUsed }));
               const out = new ReadableStream<Uint8Array>({ start(c2) { for (let i = 0; i < answer.length; i += 400) c2.enqueue(sseChunk(answer.slice(i, i + 400))); c2.enqueue(sseDone()); c2.close(); } });
               const wrapped = contentIntent?.intent === "deliverable" && contentIntent.single ? wrapCopyReady(out, contentIntent.rawMarkdown ? "text" : "markdown") : out;

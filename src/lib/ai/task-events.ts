@@ -1,23 +1,27 @@
 // Typed task-lifecycle events streamed from /api/chat (`vision_task` SSE lines). Pure and browser-safe.
 
 export type TaskStage =
-  | "thinking" | "planning" | "analyzing" | "researching" | "searching_web" | "reading_sources"
-  | "processing" | "building" | "writing" | "reviewing" | "validating" | "detecting_issues"
-  | "correcting" | "retrying" | "finalizing" | "rendering" | "completed" | "failed" | "cancelled";
+  | "thinking" | "understanding_request" | "analyzing_requirements" | "reasoning"
+  | "searching_web" | "reading_sources" | "gathering_information" | "comparing_sources" | "fact_checking" | "extracting_information"
+  | "processing" | "analyzing_files" | "processing_data" | "calculating" | "executing_code" | "running_tests" | "generating_file" | "converting_file"
+  | "reviewing_answer" | "verifying_accuracy" | "checking_completeness" | "validating_requirements" | "detecting_issues" | "fixing_issues" | "retrying"
+  | "building_output" | "preparing_output" | "finalizing" | "failed" | "cancelled";
 
+/** The standard catalogue (30). Available labels, not a sequence: the server emits only those it actually performs. */
 export const STAGE_LABELS: Record<TaskStage, string> = {
-  thinking: "Thinking", planning: "Planning", analyzing: "Analyzing", researching: "Researching",
-  searching_web: "Searching the Web", reading_sources: "Reading Sources", processing: "Processing Data",
-  building: "Building", writing: "Writing", reviewing: "Reviewing", validating: "Validating",
-  detecting_issues: "Detecting Issues", correcting: "Correcting", retrying: "Retrying",
-  finalizing: "Finalizing", rendering: "Rendering Response", completed: "Completed", failed: "Failed", cancelled: "Cancelled",
+  thinking: "Thinking", understanding_request: "Understanding Request", analyzing_requirements: "Analyzing Requirements", reasoning: "Reasoning",
+  searching_web: "Searching the Web", reading_sources: "Reading Sources", gathering_information: "Gathering Information", comparing_sources: "Comparing Sources", fact_checking: "Fact-Checking", extracting_information: "Extracting Information",
+  processing: "Processing", analyzing_files: "Analyzing Files", processing_data: "Processing Data", calculating: "Calculating", executing_code: "Executing Code", running_tests: "Running Tests", generating_file: "Generating File", converting_file: "Converting File",
+  reviewing_answer: "Reviewing Answer", verifying_accuracy: "Verifying Accuracy", checking_completeness: "Checking Completeness", validating_requirements: "Validating Requirements", detecting_issues: "Detecting Issues", fixing_issues: "Fixing Issues", retrying: "Retrying",
+  building_output: "Building Output", preparing_output: "Preparing Output", finalizing: "Finalizing", failed: "Failed", cancelled: "Cancelled",
 };
 
 export type TaskEvent = { taskId: string; seq: number; stage: TaskStage; message?: string; ts: number; meta?: Record<string, number | string> };
 export type TaskState = { taskId: string; seq: number; stage: TaskStage; message?: string; history: TaskStage[] };
 
 const STAGES = new Set(Object.keys(STAGE_LABELS));
-export const isTerminalStage = (s: TaskStage) => s === "completed" || s === "failed" || s === "cancelled";
+/** Successful tasks end at "finalizing" (the answer follows directly; no completion status exists). */
+export const isTerminalStage = (s: TaskStage) => s === "failed" || s === "cancelled";
 
 /** Validates an untrusted event; malformed events return null. */
 export function parseTaskEvent(raw: unknown): TaskEvent | null {
