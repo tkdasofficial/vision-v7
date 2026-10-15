@@ -120,7 +120,7 @@ export default function TableReply({ children, node, markdown }: { children: Rea
         <DialogPrimitive.Content aria-describedby={undefined} className="fixed inset-0 z-[10000] flex h-dvh min-w-0 flex-col bg-background text-foreground outline-none pb-[env(safe-area-inset-bottom)]">
           <header className="flex min-h-14 shrink-0 items-center gap-1 border-b border-border px-2 pt-[env(safe-area-inset-top)]">
             <Button variant="ghost" size="icon" className="shrink-0 rounded-full md:rounded-md" onClick={() => setOpen(false)} aria-label="Back to chat" title="Back to chat"><ArrowLeft /></Button>
-            <DialogTitle className="min-w-0 flex-1 truncate px-1 font-mono text-sm font-medium">Table</DialogTitle>
+            <DialogTitle className="min-w-0 flex-1 truncate px-1 font-mono text-sm font-medium">Table <span className="font-sans text-xs font-normal text-muted-foreground">· {rows.length} rows · {headers.length} columns</span></DialogTitle>
             <div className="flex shrink-0 gap-1">
               <Button variant="ghost" size="icon" className="rounded-full md:rounded-md" onClick={download} aria-label="Download table CSV" title="Download table CSV"><Download /></Button>
               <Button variant="ghost" size="icon" className="rounded-full md:rounded-md" onClick={() => copy(markdown)} aria-label={copied ? "Copied" : "Copy table Markdown"} title={copied ? "Copied" : "Copy table Markdown"}>{copied ? <Check /> : <Copy />}</Button>
