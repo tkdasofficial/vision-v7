@@ -14,6 +14,7 @@ export function buildRequirements(a: RequestAnalysis, text: string): Requirement
   const ins = a.instructions;
   if (ins?.words) add("words", `${ins.words.min ?? 0}-${ins.words.max ?? "∞"} words per ${ins.words.per}`);
   for (const s of ins?.scripts ?? []) add(`script:${s.part}`, `${s.part} in ${s.language ?? s.script} (${s.script})`);
+  for (const n of ins?.requiredNames ?? []) add(`name:${n}`, `"${n}" named in every item`);
   if (ins?.noCommentary) add("no-commentary", "no extra commentary");
   if (ins?.consistency) add("consistency", "consistent characters and continuity", false);
   if (a.length !== "auto") add("length", `${a.length} answer`, false);
@@ -35,7 +36,7 @@ export function applyIssues(r: Requirement[], codes: string[], checked: string[]
   const map: Record<string, string[]> = { count: ["missing", "extra", "duplicate", "order"], json: ["json_missing", "json_invalid"], words: ["word_count"], "no-commentary": ["commentary"], durations: ["duration_missing", "duration_unsupported"], total: ["duration_total", "duration_conflict_hidden"], table: ["table_columns", "table_duplicate", "table_total"] };
   return r.map((x) => {
     if (x.status === "impossible" || x.status === "conflicting") return x;
-    const base = x.id.startsWith("script:") ? ["script"] : map[x.id] ?? [];
+    const base = x.id.startsWith("script:") ? ["script"] : x.id.startsWith("name:") ? ["required_name"] : map[x.id] ?? [];
     if (base.some((c) => codes.includes(c))) return { ...x, status: "missing" };
     return checked.includes(x.id) || checked.includes(x.id.split(":")[0]) ? { ...x, status: "met" } : x;
   });

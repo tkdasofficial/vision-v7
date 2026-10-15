@@ -13,6 +13,8 @@ export type Instructions = {
   noHeadings?: boolean;
   /** Continuity/consistency was asked for — subjective, checked by the reviewer, never claimed as verified. */
   consistency: boolean;
+  /** Names that must appear in every item ("keep the robot named Bolt in every prompt"). */
+  requiredNames?: string[];
 };
 import { ranges } from "./validators";
 
@@ -60,7 +62,34 @@ export function parseInstructions(text: string): Instructions {
   const noCommentary = /\b(no|without)\s+(?:any\s+)?(?:extra|additional|other)?\s*(commentary|comments|explanations?|preamble|intro(?:duction)?|notes)\b|\b(only|just)\s+(?:return|output|give)?\s*(?:the\s+)?(story|output|answer|code|json|list|scenes?)\s*(?:only|,|\.|$)|\b(?:return|output)\s+only\b/i.test(t);
   const consistency = /\b(consistent|consistency|continuity|continuous|coherent)\b/i.test(t);
   const noHeadings = /\b(?:no|without)\s+(?:any\s+)?(?:headings?|headers?|titles?|section\s+titles?)\b|\bplain[\s-]text\b/i.test(t);
-  return { words, maxChars: chars ? Number(chars[1]) : null, scripts, noCommentary, consistency, noHeadings };
+  const requiredNames = parseRequiredNames(t);
+  return { words, maxChars: chars ? Number(chars[1]) : null, scripts, noCommentary, consistency, noHeadings, ...(requiredNames.length ? { requiredNames } : {}) };
+}
+
+const EVERY = /\b(?:in|into|to)\s+(?:every|each|all(?:\s+the)?|all\s+\d+)\s+(?:single\s+)?(?:of\s+the\s+)?[a-z]+/i;
+/** "named Bolt … in every prompt", "mention Bolt in each scene", "use the name Bolt in all prompts". */
+export function parseRequiredNames(t: string): string[] {
+  const names = new Set<string>();
+  for (const sent of t.split(/(?<=[.!?;\n])\s+|,\s+(?=(?:and\s+)?(?:keep|make|use|include|mention))/)) {
+    if (!EVERY.test(sent)) continue;
+    for (const m of sent.matchAll(/\b(?:named|called|name)\s+["“']?([A-Z][\p{L}\d-]{1,30})/gu)) names.add(m[1]);
+    const direct = /\b(?:keep|include|mention|use)\s+["“']?([A-Z][\p{L}\d-]{1,30})["”']?\s+(?:in|into)\s+(?:every|each|all)\b/u.exec(sent);
+    if (direct && !/^(The|A|An|It|This|That|Every|Each|All)$/.test(direct[1])) names.add(direct[1]);
+  }
+  return [...names].slice(0, 5);
+}
+
+/** Items of an answer: labelled sections when present, otherwise top-level numbered list entries ("1." / "1)"). */
+export function splitItems(text: string, noun: string | null): { num: number; body: string }[] {
+  const body = text.replace(/^\s*```[\w-]*\s*$/gm, "");
+  if (noun) { const s = splitSections(body, noun).sections; if (s.length) return s.map((x) => ({ num: x.num, body: x.body })); }
+  const out: { num: number; body: string }[] = [];
+  for (const line of body.split("\n")) {
+    const m = /^\s{0,3}(?:\*\*)?(\d{1,4})[.)](?:\*\*)?\s+(.*)$/.exec(line);
+    if (m) out.push({ num: Number(m[1]), body: m[2] });
+    else if (out.length && line.trim() && !/^#{1,6}\s|^>/.test(line)) out[out.length - 1].body += `\n${line}`;
+  }
+  return out;
 }
 
 /** Word rule: a word is a whitespace-separated token containing at least one letter or digit (any script).
@@ -146,6 +175,14 @@ export function checkInstructions(text: string, ins: Instructions, noun: string 
     if (rule.part === "dialogue" && noDialogue.length) issues.push({ code: "dialogue_missing", items: sections.length ? noDialogue : undefined, message: `No ${rule.language} dialogue (in quotes) was found in ${sections.length ? `${noun} ${ranges(noDialogue)}` : "the answer"}.` });
   }
 
+  if (ins.requiredNames?.length) {
+    const items = splitItems(text, noun);
+    for (const name of ins.requiredNames) {
+      const re = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+      const miss = items.filter((u) => !re.test(u.body)).map((u) => u.num);
+      if (miss.length) issues.push({ code: "required_name", items: sections.length ? miss : undefined, message: `"${name}" must appear by name in every ${noun ?? "item"}; it is missing from ${noun ?? "item"} ${ranges(miss)} (replace pronouns or generic references with "${name}").` });
+    }
+  }
   if (ins.noHeadings && /^#{1,6}\s/m.test(body)) issues.push({ code: "headings", message: "Remove every heading and title line — the user asked for no headings." });
   if (ins.noCommentary) {
     const pre = preamble.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -197,6 +234,7 @@ export function instructionAddendum(ins: Instructions, noun: string | null): str
   for (const s of ins.scripts) lines.push(`${s.part === "all" ? "All text" : s.part === "dialogue" ? "All dialogue (in double quotes)" : "All descriptions"} must be ${s.language} in ${s.script} script${s.part === "dialogue" ? "; do not mix in other scripts" : ""}.`);
   if (ins.noHeadings) lines.push("Do not use any headings or title lines (no lines starting with #).");
   if (ins.noCommentary) lines.push("Return only the requested output: no intro, no closing remarks, no notes.");
+  for (const n of ins.requiredNames ?? []) lines.push(`Write the name "${n}" explicitly in every ${noun ?? "item"} — never only "he", "she", "it" or "the robot".`);
   if (ins.consistency) lines.push("Keep characters' names, appearance, clothing and the timeline consistent across every part.");
   return lines;
 }

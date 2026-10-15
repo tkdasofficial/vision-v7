@@ -74,7 +74,7 @@ export function analyzeRequest(text: string): RequestAnalysis {
   }
 
   const instructions = parseInstructions(t);
-  const hasRules = !!instructions.words || !!instructions.maxChars || instructions.scripts.length > 0 || instructions.noCommentary || !!instructions.noHeadings || instructions.consistency;
+  const hasRules = !!instructions.words || !!instructions.maxChars || instructions.scripts.length > 0 || instructions.noCommentary || !!instructions.noHeadings || instructions.consistency || !!instructions.requiredNames?.length;
   const complex = !!items || wantsJson || !!allowedDurations || length === "detailed" || t.length > 600 || hasRules;
   return { items, length, wantsJson, allowedDurations, totalDuration, complex, ...(hasRules ? { instructions } : {}) };
 }
