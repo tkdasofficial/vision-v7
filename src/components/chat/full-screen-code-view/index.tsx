@@ -8,7 +8,7 @@ import { useCopy } from "@/components/chat/use-copy";
 import CodeSource from "@/components/chat/code-source";
 import PreviewPane from "@/components/chat/preview-pane";
 import { cn } from "@/lib/utils";
-import { ZoomControls } from "@/components/chat/zoom-controls";
+import { ZoomControls, usePinchZoom } from "@/components/chat/zoom-controls";
 import { codeLanguageLabel } from "@/lib/code-language-label";
 
 type Props = { code: string; language?: string; filename?: string; html?: string; previewHTML?: string; iframeRef?: Ref<HTMLIFrameElement>; initialView?: "code" | "preview" | "split"; copyText?: string; copyHtml?: () => string | undefined; onClose: () => void };
@@ -27,25 +27,11 @@ export default function FullScreenCodeView({ code, language, filename, previewHT
   const [view, setView] = useState(initialView);
   const area = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
-  const pinch = useRef<{ d: number; s: number } | null>(null);
   const preview = previewHTML ?? (["html", "htm", "svg"].includes(language ?? "") ? code : undefined);
   const matches = useMemo(() => query ? code.split("\n").flatMap((line, index) => line.toLowerCase().includes(query.toLowerCase()) ? [index + 1] : []) : [], [code, query]);
   const activeLine = matches[matchIndex % (matches.length || 1)];
 
-  useEffect(() => {
-    const el = area.current;
-    if (!el) return;
-    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    const start = (e: TouchEvent) => { if (e.touches.length === 2) pinch.current = { d: dist(e.touches), s: size }; };
-    const move = (e: TouchEvent) => { if (e.touches.length === 2 && pinch.current && pinch.current.d > 0) { e.preventDefault(); setSize(clamp(Math.round(pinch.current.s * (dist(e.touches) / pinch.current.d)))); } };
-    const end = () => { pinch.current = null; };
-    const wheel = (e: WheelEvent) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setSize((s) => clamp(s + (e.deltaY < 0 ? 1 : -1))); } };
-    el.addEventListener("touchstart", start, { passive: true });
-    el.addEventListener("touchmove", move, { passive: false });
-    el.addEventListener("touchend", end);
-    el.addEventListener("wheel", wheel, { passive: false });
-    return () => { el.removeEventListener("touchstart", start); el.removeEventListener("touchmove", move); el.removeEventListener("touchend", end); el.removeEventListener("wheel", wheel); };
-  }, [size, view]);
+  usePinchZoom(area, () => size, (value) => setSize(clamp(Math.round(value))), 1);
   useEffect(() => { area.current?.querySelector(`[data-code-line="${activeLine}"]`)?.scrollIntoView({ block: "center", inline: "nearest" }); }, [activeLine]);
   useEffect(() => { if (searchOpen) searchInput.current?.focus(); }, [searchOpen]);
   const moveMatch = (direction: number) => setMatchIndex((index) => (index + direction + matches.length) % (matches.length || 1));
