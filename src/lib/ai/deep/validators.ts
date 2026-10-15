@@ -2,6 +2,7 @@
 import type { RequestAnalysis } from "./analyze";
 import { planDurations } from "./durations";
 import { checkInstructions } from "./instructions";
+import { checkPlot } from "./plot";
 
 /** `items` lists the affected section numbers when the problem is local, enabling targeted correction. */
 export type Issue = { code: string; message: string; items?: number[] };
@@ -96,6 +97,8 @@ export function validateCandidate(text: string, a: RequestAnalysis, finishReason
   issues.push(...checkDurations(text, a));
   issues.push(...checkStructure(text));
   issues.push(...checkContinuity(text));
+  // Whole-story plot check: every scene is read together, not one at a time.
+  if (a.items && /^(scene|prompt|clip|shot|part|chapter|panel|episode|beat)s?$/i.test(a.items.noun)) issues.push(...checkPlot(text, a.items.noun));
   if (a.instructions) issues.push(...checkInstructions(text, a.instructions, a.items?.noun ?? null));
   return issues;
 }
