@@ -15,9 +15,14 @@ const PHASE_LABELS: Record<ThinkingPhase, string> = {
 
 type Props = {
   phase?: ThinkingPhase;
+  /** Real backend stage label (from task events); overrides the local phase. */
+  label?: string;
+  detail?: string;
+  /** Stages already passed, shown as a compact trail. */
+  done?: string[];
 };
 
-const TypingIndicator = forwardRef<HTMLDivElement, Props>(({ phase = "thinking" }, ref) => {
+const TypingIndicator = forwardRef<HTMLDivElement, Props>(({ phase = "thinking", label: stageLabel, detail, done }, ref) => {
   const [dots, setDots] = useState(0);
 
   useEffect(() => {
@@ -27,14 +32,20 @@ const TypingIndicator = forwardRef<HTMLDivElement, Props>(({ phase = "thinking" 
     return () => clearInterval(interval);
   }, []);
 
-  const label = PHASE_LABELS[phase] || "Thinking";
+  const label = stageLabel || PHASE_LABELS[phase] || "Thinking";
   const dotStr = ".".repeat(dots);
 
   return (
-    <div ref={ref} className="flex items-center gap-2 px-4 py-3 max-w-2xl mx-auto animate-fade-in">
-      <span className="text-sm text-muted-foreground font-medium">
-        {label}{dotStr}
+    <div ref={ref} role="status" aria-live="polite" className="mx-auto flex max-w-2xl flex-col gap-0.5 px-4 py-3 animate-fade-in">
+      <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary" aria-hidden />
+        <span key={label} className="animate-fade-in">{label}<span className="text-muted-foreground">{dotStr}</span></span>
       </span>
+      {(detail || (done && done.length > 0)) && (
+        <span className="truncate pl-3.5 text-xs text-muted-foreground">
+          {detail || done!.slice(-3).map((s) => s.replace(/_/g, " ")).join(" · ")}
+        </span>
+      )}
     </div>
   );
 });

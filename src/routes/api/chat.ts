@@ -79,17 +79,23 @@ export const Route = createFileRoute("/api/chat")({
         let searchUsed = "none";
         // "auto" also searches when any mode is explicitly asked for sources, so citations come from a real search, not memory.
         const { asksForSources } = await import("@/lib/ai/request-route");
+        const { needsLiveFacts } = await import("@/lib/ai/task-events");
         // The Web Search plugin forces a real retrieval for this message regardless of the auto setting.
         const pluginSearch = body?.webSearch === true;
-        const wantSearch = pluginSearch || prefs.webSearch === "always" || (prefs.webSearch === "auto" && (task.executionMode === "research" || asksForSources(lastText)));
-        if (wantSearch && lastText.trim()) {
+        const wantSearch = pluginSearch || prefs.webSearch === "always" || (prefs.webSearch === "auto" && (task.executionMode === "research" || asksForSources(lastText) || (task.executionMode === "default" && needsLiveFacts(lastText))));
+        const runSearch = async (emit?: (stage: "searching_web" | "reading_sources", msg?: string) => void) => {
+          if (!wantSearch || !lastText.trim()) return;
           const { webSearch, sourcesBlock } = await import("@/lib/search/search.server");
           try {
+            emit?.("searching_web");
             const s = await webSearch(pluginSearch ? lastText.replace(/^@Web Search\s*/i, "") : lastText, { signal: request.signal });
             searchUsed = `${s.status}:${s.used.join(",") || "none"}`;
+            emit?.("reading_sources", s.results.length ? `Reading ${s.results.length} source${s.results.length === 1 ? "" : "s"}` : "No sources found");
             system += `\n\n${sourcesBlock(s.results, s.status, s.failed)}`;
           } catch (e) { console.error("[search]", e); system += "\n\nLive web search was unavailable; say so in the answer."; }
-        }
+        };
+        // Deep/Research paths search up front; the default task pipeline searches inside its stream so the status is live.
+        if (task.executionMode !== "default") await runSearch();
         // Deep Thinking Mode: deterministic analysis; complex requests go through the bounded verify/correct pipeline.
         let deepAnalysis: import("@/lib/ai/deep/analyze").RequestAnalysis | null = null;
         const baseSystem = system;
@@ -175,34 +181,82 @@ export const Route = createFileRoute("/api/chat")({
           });
         }
 
-        let lastStatus = 502;
-        for (const t of candidatesFor(task)) {
-          const r = await streamFromProvider(t, fullMessages, { maxTokens: deep ? 8192 : 4096, deep }, request.signal);
-          if (r.ok) {
-            // Some reasoning models end after thinking with no answer text; fall through to the next model then.
-            const { untilAnswer } = await import("@/lib/ai/answer-guard");
-            const guarded = await untilAnswer(r.body);
-            if (!guarded) { console.error("[chat]", t.provider, t.model, "empty answer"); lastStatus = 502; continue; }
-            const { wrapCopyReady } = await import("@/lib/ai/copy-ready-stream");
-            const body = contentIntent?.intent === "deliverable" && contentIntent.single ? wrapCopyReady(guarded, contentIntent.rawMarkdown ? "text" : "markdown") : guarded;
-            return new Response(body, {
-              headers: {
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-store",
-                "X-Vision-Model": t.label,
-                "X-Vision-Execution": task.executionMode,
-                "X-Vision-Output": task.output,
-                "X-Vision-Search": searchUsed,
-              },
-            });
-          }
-          if (r.status === 499) return new Response(null, { status: 499 });
-          lastStatus = r.status;
-          console.error("[chat]", t.provider, t.model, r.status, r.reason);
-          // Auth/permission problems won't fix themselves on retry; try the next provider instead.
-        }
-        const status = lastStatus === 429 ? 429 : 502;
-        return Response.json({ error: status === 429 ? "AI is busy right now. Please try again in a moment." : "AI couldn't answer right now." }, { status });
+        // Default task pipeline: think → (research) → write → validate → (correct/retry, bounded) → finalize → completed → answer.
+        // The answer is only sent after the completion gate; progress is reported as typed `vision_task` events.
+        const { collectStream, sseChunk, sseDone, sseComment } = await import("@/lib/ai/deep/sse");
+        const { taskEmitter } = await import("@/lib/ai/task-events");
+        const { analyzeRequest } = await import("@/lib/ai/deep/analyze");
+        const { validateCandidate } = await import("@/lib/ai/deep/validators");
+        const { wrapCopyReady } = await import("@/lib/ai/copy-ready-stream");
+        const taskId = typeof body?.requestId === "string" && /^[\w-]{8,64}$/.test(body.requestId) ? body.requestId : crypto.randomUUID();
+        const models = candidatesFor(task);
+        const enc = new TextEncoder();
+        let usedModel = models[0]?.label ?? "";
+        const stream = new ReadableStream<Uint8Array>({
+          async start(ctrl) {
+            const send = (s: string) => { try { ctrl.enqueue(enc.encode(s)); } catch { /* closed */ } };
+            const emit = taskEmitter(taskId, send);
+            const ping = setInterval(() => send(": working\n\n"), 8000);
+            try {
+              emit("thinking", "Understanding the request");
+              await runSearch((stage, msg) => emit(stage, msg));
+              const analysis = analyzeRequest(lastText);
+              const msgs = [{ role: "system", content: system }, ...messages];
+              let best: { text: string; issues: number } | null = null;
+              let lastStatus = 502;
+              let attempt = 0;
+              for (const t of models) {
+                if (request.signal.aborted) { emit("cancelled"); return; }
+                if (attempt > 0) emit("retrying", `Trying ${t.label}`);
+                attempt++;
+                emit("writing");
+                const r = await streamFromProvider(t, best ? [...msgs, { role: "assistant", content: best.text }, { role: "user", content: "Your previous answer failed these checks; return the complete corrected answer only." }] : msgs, { maxTokens: deep ? 8192 : 4096, deep }, request.signal);
+                if (!r.ok) { lastStatus = r.status; if (r.status === 499) { emit("cancelled"); return; } console.error("[chat]", t.provider, t.model, r.status, r.reason); continue; }
+                let c: { text: string; finishReason: string | null };
+                try { c = await collectStream(r.body); } catch (e: any) { if (request.signal.aborted) { emit("cancelled"); return; } console.error("[chat]", t.label, e?.message); continue; }
+                const text = c.text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+                if (!text) { console.error("[chat]", t.provider, t.model, "empty answer"); continue; }
+                emit("validating", "Checking the answer against the request");
+                const issues = validateCandidate(text, analysis, c.finishReason);
+                if (!best || issues.length < best.issues) { best = { text, issues: issues.length }; usedModel = t.label; }
+                if (!issues.length) break;
+                emit("detecting_issues", issues[0].message.slice(0, 120));
+                emit("correcting", "Fixing the detected issues");
+              }
+              if (!best) {
+                emit("failed", lastStatus === 429 ? "AI is busy" : "No answer was produced");
+                send(`data: ${JSON.stringify({ choices: [{ delta: { content: lastStatus === 429 ? "AI is busy right now. Please try again in a moment." : "AI couldn't answer right now." } }] })}\n\n`);
+                return;
+              }
+              emit("finalizing", "Preparing output");
+              const answer = best.issues ? `${best.text}\n\n> [!NOTE]\n> Verification note: some automatic checks on this answer could not be fully resolved.` : best.text;
+              emit("completed");
+              console.log("[chat:task]", JSON.stringify({ user: caller.user.id, taskId, model: usedModel, attempts: attempt, unresolved: best.issues, search: searchUsed }));
+              const out = new ReadableStream<Uint8Array>({ start(c2) { for (let i = 0; i < answer.length; i += 400) c2.enqueue(sseChunk(answer.slice(i, i + 400))); c2.enqueue(sseDone()); c2.close(); } });
+              const wrapped = contentIntent?.intent === "deliverable" && contentIntent.single ? wrapCopyReady(out, contentIntent.rawMarkdown ? "text" : "markdown") : out;
+              const reader = wrapped.getReader();
+              for (;;) { const { done, value } = await reader.read(); if (done) break; ctrl.enqueue(value); }
+              return;
+            } catch (e) {
+              console.error("[chat:task]", e);
+              emit("failed", "Internal error");
+            } finally {
+              clearInterval(ping);
+              try { ctrl.enqueue(sseComment("end")); ctrl.enqueue(sseDone()); ctrl.close(); } catch { /* closed */ }
+            }
+          },
+        });
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-store",
+            "X-Vision-Model": usedModel,
+            "X-Vision-Execution": task.executionMode,
+            "X-Vision-Output": task.output,
+            "X-Vision-Search": wantSearch ? "pending" : "none",
+            "X-Vision-Task": taskId,
+          },
+        });
       },
     },
   },
