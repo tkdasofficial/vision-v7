@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type Ref } from "react";
-import { ArrowLeft, Check, ChevronDown, ChevronUp, Code2, Columns2, Copy, Download, Eye, ListOrdered, Search, WrapText, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronUp, Code2, Columns2, Copy, Download, Eye, ListOrdered, Search, WrapText, X } from "lucide-react";
 import { Dialog, DialogPortal, DialogTitle } from "@/components/ui/dialog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
@@ -58,8 +58,7 @@ export default function FullScreenCodeView({ code, language, filename, previewHT
       <header className="code-viewer-header absolute inset-x-0 top-0 z-10 grid min-h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-1 px-2 pb-4 pt-[max(8px,env(safe-area-inset-top))] md:static md:flex md:min-h-14 md:shrink-0 md:items-center md:border-b md:border-border md:py-1">
         <Button variant="ghost" size="icon" className="code-viewer-action shrink-0 rounded-full md:rounded-md" onClick={onClose} aria-label="Back" title="Back to chat"><ArrowLeft /></Button>
         <DialogTitle aria-label={name} title={name} className="min-w-0 truncate px-1 pt-2.5 font-mono text-sm font-medium md:flex-1 md:pt-0">{codeLanguageLabel(language)}</DialogTitle>
-        <div className="flex shrink-0 items-center gap-1">
-          {view !== "preview" && <ZoomControls className="md:hidden" buttonClassName="code-viewer-action" percent={Math.round(size / BASE * 100)} canOut={size > MIN} canIn={size < MAX} onOut={() => setSize((s) => clamp(s - 1))} onIn={() => setSize((s) => clamp(s + 1))} onReset={() => setSize(BASE)} />}
+        <div className="flex shrink-0 gap-1">
           <Button variant="ghost" size="icon" className="code-viewer-action rounded-full md:hidden" disabled={!preview} aria-label={view === "preview" ? "Show code" : "Preview"} title={view === "preview" ? "Show code" : "Preview"} aria-pressed={view === "preview"} onClick={() => setView(view === "preview" ? "code" : "preview")}>{view === "preview" ? <Code2 /> : <Eye />}</Button>
           <Button variant="ghost" size="icon" className="code-viewer-action rounded-full md:rounded-md" onClick={() => downloadText(code, name)} aria-label={`Download ${name}`} title="Download file"><Download /></Button>
           <Button variant="ghost" size="icon" className="code-viewer-action rounded-full md:rounded-md" onClick={() => copy(copyText ?? code, copyHtml?.())} aria-label={copied ? "Copied" : "Copy"} title={copied ? "Copied" : "Copy code"}>{copied ? <Check /> : <Copy />}</Button>
@@ -71,9 +70,6 @@ export default function FullScreenCodeView({ code, language, filename, previewHT
           <Button variant="ghost" size="icon" className="size-8 rounded-md" aria-label="Find in code" title="Find in code" aria-pressed={searchOpen} onClick={() => setSearchOpen((open) => !open)}><Search /></Button>
           <Button variant="ghost" size="icon" className={cn("size-8 rounded-md", wrap && "bg-accent")} aria-label="Wrap lines" title="Wrap lines" aria-pressed={wrap} onClick={() => setWrap((value) => !value)}><WrapText /></Button>
           <Button variant="ghost" size="icon" className={cn("size-8 rounded-md", numbers && "bg-accent")} aria-label="Line numbers" title="Line numbers" aria-pressed={numbers} onClick={() => setNumbers((value) => !value)}><ListOrdered /></Button>
-          <Button variant="ghost" size="icon" className="size-8 rounded-md" onClick={() => setSize((s) => clamp(s - 1))} disabled={size <= MIN} aria-label="Zoom out" title="Zoom out"><ZoomOut /></Button>
-          <Button variant="ghost" className="h-8 min-w-12 rounded-md px-1 font-mono text-xs" onClick={() => setSize(BASE)} aria-label="Reset zoom" title="Reset zoom">{Math.round(size / BASE * 100)}%</Button>
-          <Button variant="ghost" size="icon" className="size-8 rounded-md" onClick={() => setSize((s) => clamp(s + 1))} disabled={size >= MAX} aria-label="Zoom in" title="Zoom in"><ZoomIn /></Button>
         </div>}
       </div>
       {searchOpen && view !== "preview" && <div className="hidden shrink-0 items-center gap-1 border-b border-border px-3 py-2 md:flex">
@@ -85,7 +81,7 @@ export default function FullScreenCodeView({ code, language, filename, previewHT
         <Button variant="ghost" size="icon" className="size-8" aria-label="Close search" title="Close search" onClick={() => { setSearchOpen(false); setQuery(""); }}><X /></Button>
       </div>}
       <div className={cn("grid min-h-0 flex-1 pt-[max(64px,calc(env(safe-area-inset-top)+56px))] md:pt-0", view === "split" ? "grid-rows-2 md:grid-cols-2 md:grid-rows-1" : "grid-cols-1")}>
-        {view !== "preview" && <div ref={area} aria-label="Code content" tabIndex={0} className="mobile-code-source min-h-0 min-w-0 overflow-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"><CodeSource code={code} language={language} size={size} wrap={wrap} lineNumbers={numbers} query={query} activeLine={activeLine} /></div>}
+        {view !== "preview" && <div className="relative min-h-0 min-w-0"><ZoomControls className="absolute bottom-3 right-3 z-10 rounded-full border border-border bg-background/90 p-0.5 shadow-md backdrop-blur" percent={Math.round(size / BASE * 100)} canOut={size > MIN} canIn={size < MAX} onOut={() => setSize((s) => clamp(s - 1))} onIn={() => setSize((s) => clamp(s + 1))} onReset={() => setSize(BASE)} /><div ref={area} aria-label="Code content" tabIndex={0} className="mobile-code-source h-full min-h-0 min-w-0 overflow-auto overscroll-contain focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"><CodeSource code={code} language={language} size={size} wrap={wrap} lineNumbers={numbers} query={query} activeLine={activeLine} /></div></div>}
         {view !== "code" && preview && <div className="min-h-0 min-w-0 border-t border-border md:border-l md:border-t-0"><PreviewPane html={preview} iframeRef={iframeRef} title={`${name} preview`} /></div>}
       </div>
        <footer className="hidden h-8 shrink-0 items-center justify-between gap-2 border-t border-border px-3 font-mono text-[11px] text-muted-foreground md:flex"><span className="truncate">{language || "Plain text"} · {code.split("\n").length} lines</span><span className="shrink-0">{new TextEncoder().encode(code).length.toLocaleString()} bytes</span></footer>

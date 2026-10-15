@@ -9,7 +9,7 @@ export function ZoomControls({ percent, canOut, canIn, onOut, onIn, onReset, cla
 }) {
   return <div role="group" aria-label="Zoom" className={cn("flex items-center gap-0.5", className)}>
     <Button variant="ghost" size="icon" className={cn("size-9 rounded-full md:size-8 md:rounded-md", buttonClassName)} onClick={onOut} disabled={!canOut} aria-label="Zoom out" title="Zoom out"><ZoomOut /></Button>
-    <Button variant="ghost" className={cn("h-9 min-w-12 rounded-full px-1 font-mono text-xs tabular-nums md:h-8 md:rounded-md", buttonClassName)} onClick={onReset} aria-label={`Reset zoom (${percent}%)`} title="Reset zoom">{percent}%</Button>
+    <Button variant="ghost" className={cn("h-9 min-w-12 rounded-full px-1 font-mono text-xs tabular-nums md:h-8 md:rounded-md", buttonClassName)} onClick={onReset} aria-label="Reset zoom" title="Reset zoom">{percent}%</Button>
     <Button variant="ghost" size="icon" className={cn("size-9 rounded-full md:size-8 md:rounded-md", buttonClassName)} onClick={onIn} disabled={!canIn} aria-label="Zoom in" title="Zoom in"><ZoomIn /></Button>
   </div>;
 }
