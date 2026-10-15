@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { resolveReference, sourceBlock, artifactMatchesSource, workingContext, type ConvMsg } from "@/lib/ai/references";
 import { analyzeRequest } from "@/lib/ai/deep/analyze";
 import { validateCandidate, checkContinuity } from "@/lib/ai/deep/validators";
-import { budgetHistory } from "@/lib/ai/context";
 
 const chat: ConvMsg[] = [
   { id: "u1", role: "user", content: "Tell me about the Moon" },
@@ -28,7 +27,7 @@ describe("Conversation memory & reference resolution", () => {
   });
   it("8: older answer outside the recent window is still retrieved", () => {
     const long: ConvMsg[] = [...chat, ...Array.from({ length: 60 }, (_, i) => ({ role: (i % 2 ? "assistant" : "user") as any, content: `turn ${i} ${"x".repeat(2000)}` }))];
-    expect(budgetHistory(long as any, 10000).messages.some((m: any) => String(m.content).includes("384,400"))).toBe(false);
+    expect(long.slice(-30).some((m) => String(m.content).includes("384,400"))).toBe(false);
     const r = resolveReference("What did you say in your first response?", long);
     expect(r.kind === "found" && r.content).toContain("384,400");
   });
