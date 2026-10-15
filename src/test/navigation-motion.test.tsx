@@ -13,10 +13,10 @@ import NavigationGestures from "@/components/navigation-gestures";
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); mocks.pathname = "/chat"; document.documentElement.classList.remove("reduce-motion"); });
 
-function pullDown(target: Element) {
-  const point = { identifier: 1, clientX: 160, clientY: 200 };
+function pullDown(target: Element, startY = 40) {
+  const point = { identifier: 1, clientX: 160, clientY: startY };
   fireEvent.touchStart(target, { touches: [point], changedTouches: [point] });
-  const moved = { ...point, clientY: 260 };
+  const moved = { ...point, clientY: startY + 60 };
   fireEvent.touchMove(target, { touches: [moved], changedTouches: [moved] });
   fireEvent.touchEnd(target, { touches: [], changedTouches: [moved] });
 }
@@ -31,6 +31,8 @@ describe("Projects pull-down ownership", () => {
     const drawerSearch = vi.fn();
     projects.addEventListener(PROJECTS_SEARCH_EVENT, search);
     document.addEventListener(DRAWER_SEARCH_EVENT, drawerSearch);
+    pullDown(projects, 300);
+    expect(search).not.toHaveBeenCalled(); // mid-screen down-swipe is ignored
     pullDown(projects);
     expect(search).toHaveBeenCalledTimes(1);
     expect(drawerSearch).not.toHaveBeenCalled();
