@@ -460,6 +460,7 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
       setIsTyping(false);
       setTaskState(null);
     } catch (e: any) {
+      setTaskState(null);
       if (e?.name === "AbortError") { clearTimeout(phaseTimer); setIsTyping(false); return; }
       const errMsg: ChatMessageType = { id: (Date.now() + 1).toString(), role: "assistant", content: `Sorry, an error occurred: ${e.message}`, timestamp: new Date() };
       // Replace a Deep Thinking status card with the error instead of leaving it spinning.
@@ -627,7 +628,7 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
                 isNew={newMessageIds.has(msg.id)}
               />
             ))}
-            {isTyping && <TypingIndicator phase={thinkingPhase} />}
+            {isTyping && <TypingIndicator phase={thinkingPhase} label={taskState ? STAGE_LABELS[taskState.stage] : undefined} detail={taskState?.message} done={taskState?.history.slice(0, -1)} />}
           </div>
         ) : (
           <EmptyState tool={tool} />
