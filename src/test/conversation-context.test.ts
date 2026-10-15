@@ -68,7 +68,7 @@ describe("Conversation memory & reference resolution", () => {
 describe("Accuracy validation", () => {
   const scene = (n: number, d: number, s = "hero at door", e = "hero at door") => `Scene ${n}: x\nStarting state: ${s}\nEnding state: ${e}\nDuration: ${d}s`;
   it("1: eight scenes totalling 50s pass; wrong total is caught", () => {
-    const a = analyzeRequest("Write 8 scenes for a 50 second video using 4, 6, 8 or 10 second clips");
+    const a = analyzeRequest("Write 8 scenes for a 50 second audio using 4, 6, 8 or 10 second clips");
     const good = [8, 6, 6, 6, 6, 6, 6, 6].map((d, i) => scene(i + 1, d)).join("\n\n");
     expect(validateCandidate(good, a)).toEqual([]);
     const bad = [8, 8, 6, 6, 6, 6, 6, 6].map((d, i) => scene(i + 1, d)).join("\n\n");
