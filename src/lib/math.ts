@@ -17,7 +17,9 @@ export function normalizeMath(src: string): string {
 
 function prose(s: string): string {
   return s
-    .replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => `\n$$\n${m.trim()}\n$$\n`)
+    // A \[ … \] block keeps its line's indentation so it stays inside list items.
+    .replace(/^([ \t]*)\\\[([\s\S]+?)\\\][ \t]*$/gm, (_, ind, m) => `${ind}$$\n${ind}${m.trim().replace(/\n[ \t]*/g, `\n${ind}`)}\n${ind}$$`)
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => `$$${m.trim()}$$`)
     .replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => `$${m.trim()}$`)
     // "$12,597.12" / "$5 million": digits then a non-maths character → literal dollar.
     .replace(/(^|[^\\$])\$(?=\d[\d,]*(?:\.\d+)?(?:[\s.,;:!?)\]]|$|[kKmMbB]\b))/g, "$1\\$");
