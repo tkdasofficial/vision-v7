@@ -89,8 +89,9 @@ export function workingContext(history: ConvMsg[], max = 1500): { instructions: 
     if (f) { const topic = f[2].toLowerCase().trim(); for (let i = instructions.length - 1; i >= 0; i--) if (instructions[i].toLowerCase().includes(topic)) instructions.splice(i, 1); continue; }
     for (const s of text.split(/(?<=[.!?\n])\s+/)) if (STAND.test(s) && s.length < 300) {
       // A later instruction about the same subject replaces the earlier one (recent correction wins).
-      const key = (s.toLowerCase().match(/\b(language|english|hindi|tone|length|words?|format|name|scenes?|seconds?)\b/) ?? [])[1];
-      if (key) for (let i = instructions.length - 1; i >= 0; i--) if (instructions[i].toLowerCase().includes(key)) instructions.splice(i, 1);
+      const LANG = /\b(language|english|hindi|bengali|spanish|french)\b/i;
+      const key = LANG.test(s) ? LANG : (s.toLowerCase().match(/\b(tone|length|words?|format|name|scenes?|seconds?)\b/) ?? [])[1];
+      if (key) for (let i = instructions.length - 1; i >= 0; i--) if (typeof key === "string" ? instructions[i].toLowerCase().includes(key) : key.test(instructions[i])) instructions.splice(i, 1);
       instructions.push(s.trim());
     }
   }

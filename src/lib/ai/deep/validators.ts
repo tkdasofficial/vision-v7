@@ -95,7 +95,23 @@ export function validateCandidate(text: string, a: RequestAnalysis, finishReason
   if (a.wantsJson) issues.push(...checkJson(text));
   issues.push(...checkDurations(text, a));
   issues.push(...checkStructure(text));
+  issues.push(...checkContinuity(text));
   if (a.instructions) issues.push(...checkInstructions(text, a.instructions, a.items?.noun ?? null));
+  return issues;
+}
+
+/** Scene continuity: when scenes state "Ending state:" / "Starting state:", each start must match the previous end. */
+export function checkContinuity(text: string): Issue[] {
+  const parts = text.split(/(?=^\s*(?:#{1,6}\s*)?\**scene\s+\d+)/im).filter((p) => /^\s*(?:#{1,6}\s*)?\**scene\s+\d+/i.test(p));
+  const get = (p: string, k: string) => (new RegExp(`${k}\\s*state\\**\\s*:\\**\\s*(.+)`, "i").exec(p)?.[1] ?? "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const issues: Issue[] = [];
+  for (let i = 1; i < parts.length; i++) {
+    const end = get(parts[i - 1], "end(?:ing)?"), start = get(parts[i], "start(?:ing)?");
+    if (!end || !start) continue;
+    const ew = new Set(end.split(" ").filter((w) => w.length > 3)), sw = start.split(" ").filter((w) => w.length > 3);
+    const overlap = sw.filter((w) => ew.has(w)).length / Math.max(1, Math.min(ew.size, sw.length));
+    if (overlap < 0.3) issues.push({ code: "continuity", items: [i + 1], message: `Scene ${i + 1} starts with "${start}" but scene ${i} ended with "${end}".` });
+  }
   return issues;
 }
 

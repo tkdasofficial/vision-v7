@@ -111,7 +111,20 @@ export const Route = createFileRoute("/api/chat")({
           const brief = taskBrief(lastText);
           system += planAddendum(deepAnalysis) + requirementsPrompt(buildRequirements(deepAnalysis, lastText)) + (brief ? `\n\n${brief}` : "");
         }
-        if (budgeted.dropped) system += `\n\nNote: ${budgeted.dropped} older message(s) were left out to fit the context budget; if the user refers to them, say you can't see them instead of guessing.`;
+        // Conversation context: resolve references ("your first response") against the full history sent for
+        // this chat (not only the budgeted window) and attach the exact original content.
+        {
+          const { resolveReference, sourceBlock, workingContext } = await import("@/lib/ai/references");
+          const fullHist = (Array.isArray(body?.messages) ? body.messages.slice(-200, -1) : []).map((m: any) => ({ role: m.role === "assistant" ? "assistant" : "user", content: typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.filter((p: any) => p.type === "text").map((p: any) => String(p.text ?? "")).join("\n") : "" }));
+          const ref = resolveReference(lastText, fullHist as any);
+          if (ref.kind === "found") system += `\n\n${sourceBlock(ref)}`;
+          else if (ref.kind === "missing") system += `\n\nThe user referred to "${ref.label}" but it does not exist: ${ref.reason} Say so; do not invent it.`;
+          else if (ref.kind === "ambiguous") system += `\n\nThe user's reference "${ref.label}" is ambiguous. Ask exactly this one question and nothing else: ${ref.question}`;
+          const wc = workingContext(fullHist as any);
+          if (wc.instructions.length) system += `\n\nActive instructions from earlier in this chat (latest correction wins):\n${wc.instructions.map((s) => `- ${s}`).join("\n")}`;
+          if (budgeted.dropped && wc.summary) system += `\n\n${wc.summary}`;
+        }
+        if (budgeted.dropped) system += `\n\nNote: ${budgeted.dropped} older message(s) were left out to fit the context budget; if the user refers to them and no referenced source is attached, say you can't see them instead of guessing.`;
         const fullMessages = [{ role: "system", content: system }, ...messages];
 
         if (deepAnalysis && !lastHasMedia) {

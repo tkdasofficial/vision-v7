@@ -9,6 +9,7 @@ import AnnouncementBanner from "@/components/announcement-banner";
 
 import type { AITool, ChatMessage as ChatMessageType, DeepStage, MessageAttachment, PastedBlock } from "@/lib/types";
 import { routeRequest } from "@/lib/ai/request-route";
+import { resolveReference, sourceBlock } from "@/lib/ai/references";
 import { planPluginSend, PLUGIN_BY_ID } from "@/lib/plugins/manifest";
 const tagged = (ids: string[] | undefined, text: string) => [...(ids ?? []).map((i) => `@${PLUGIN_BY_ID.get(i)?.name ?? i}`), text].filter(Boolean).join(" ");
 import { Button } from "@/components/ui/button";
@@ -364,10 +365,17 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
     if (route.kind !== "chat") {
       clearPhaseTimers();
       setIsTyping(false);
-      if (route.kind === "tool") await runInlineJob("agent_task", { prompt: content }, sessionId);
-      else if (route.kind === "project") await runInlineJob("project_generate", { prompt: content }, sessionId);
-      else if (route.kind === "code_export") await runInlineJob("code_export", { prompt: content, language: route.language }, sessionId);
-      else await runInlineJob("agent_task", { prompt: `${content}\n\n(Save the result as a .${route.format} file.)` }, sessionId);
+      // Content-dependent actions run on the real referenced message, never on the reference phrase.
+      const ref = resolveReference(content, messages.map((m) => ({ id: m.id, role: m.role, content: m.content })));
+      if (ref.kind === "missing" || ref.kind === "ambiguous") {
+        setMessages((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", content: ref.kind === "missing" ? `I couldn't find ${ref.label}. ${ref.reason}` : ref.question, timestamp: new Date() }]);
+        return;
+      }
+      const src = ref.kind === "found" ? `\n\n${sourceBlock(ref)}` : "";
+      if (route.kind === "tool") await runInlineJob("agent_task", { prompt: content + src }, sessionId);
+      else if (route.kind === "project") await runInlineJob("project_generate", { prompt: content + src }, sessionId);
+      else if (route.kind === "code_export") await runInlineJob("code_export", { prompt: content + src, language: route.language }, sessionId);
+      else await runInlineJob("agent_task", { prompt: `${content}${src}\n\n(Save the result as a .${route.format} file.)` }, sessionId);
       return;
     }
 
