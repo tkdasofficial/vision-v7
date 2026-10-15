@@ -106,7 +106,7 @@ describe("batched generation", () => {
   it("stops at the time limit and offers a continuation for unwritten scenes", async () => {
     let t = 0;
     const m = mockModel();
-    const timed = async (msgs: ChatMsg[]) => { t += 40_000; return m.call(msgs); };
+    const timed = async (msgs: ChatMsg[]) => { t += 100_000; return m.call(msgs); };
     const r = await runDeepPipeline({ messages: [], analysis: analyzeRequest(req(200)), call: timed, now: () => t });
     expect(r.ok && r.remaining.find((i) => i.code === "missing")?.items?.length).toBeGreaterThan(0);
     expect(r.ok && r.text).toMatch(/continue with scenes \d+-200/);
@@ -118,5 +118,37 @@ describe("batched generation", () => {
     const r = await runDeepPipeline({ messages: [], analysis: analyzeRequest(req(n)), call: broken });
     expect(r.ok && r.corrections).toBe(DEEP_LIMITS.maxCorrections);
     expect(r.ok && r.text).toMatch(/still not met/);
+  });
+});
+
+describe("live 25-scene run: output cap and time budget", () => {
+  it("writes 25 scenes in batches small enough for one call, running later batches in parallel", async () => {
+    const m = mockModel();
+    let live = 0, peak = 0, maxBatch = 0;
+    const call = async (msgs: ChatMsg[]) => {
+      const b = /Write ONLY Scene (\d+) to Scene (\d+)/.exec(String(msgs.at(-1)!.content));
+      if (b) maxBatch = Math.max(maxBatch, Number(b[2]) - Number(b[1]) + 1);
+      live++; peak = Math.max(peak, live); await new Promise((r) => setTimeout(r, 5)); live--;
+      return m.call(msgs);
+    };
+    const r = await runDeepPipeline({ messages: [], analysis: analyzeRequest(req(25)), call });
+    expect(r.ok && r.remaining).toEqual([]);
+    expect(maxBatch).toBeLessThanOrEqual(DEEP_LIMITS.batchItems);
+    expect(peak).toBeGreaterThan(1);
+  });
+});
+describe("live 25-scene run: parallel parts share one outline", () => {
+  it("asks the hidden plan for a per-scene state outline and tells every part to follow it", async () => {
+    const m = mockModel(); const sent: string[] = [];
+    const call = async (msgs: ChatMsg[]) => { sent.push(msgs.map((x) => String(x.content)).join("\n")); return /numbered outline/.test(String(msgs[0].content)) ? ok("1. Bolt finds the core") : m.call(msgs); };
+    await runDeepPipeline({ messages: [{ role: "system", content: "sys" }], analysis: analyzeRequest(req(25)), call, plan: true, request: req(25) });
+    expect(sent[0]).toMatch(/one line per scene \(1 to 25\)/);
+    expect(sent.filter((x) => /Follow the internal plan's outline lines for Scene 6 to 12/.test(x))).toHaveLength(1);
+  });
+  it("retries a failed parallel part once instead of leaving it missing (seen live: scenes 21-24)", async () => {
+    const m = mockModel(); let failed = false;
+    const call = async (msgs: ChatMsg[]) => { if (!failed && /Write ONLY Scene 19 to Scene 24/.test(String(msgs.at(-1)!.content))) { failed = true; return { ok: false as const, status: 504, reason: "timeout" }; } return m.call(msgs); };
+    const r = await runDeepPipeline({ messages: [], analysis: analyzeRequest(req(25)), call });
+    expect(r.ok && r.remaining).toEqual([]);
   });
 });
