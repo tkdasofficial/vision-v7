@@ -41,3 +41,6 @@
 - [x] Projects page background uses the app's black (#080808) instead of gray; browser check confirms the computed color matches the app background
 - [x] App Drawer follows a swipe 1:1 with no delay (kept ready off-screen)
 - [x] Universal output accuracy: Nemotron primary + GPT-OSS 120B fallback (also on failed validation), accuracy benchmark; 1041 tests pass.
+- [x] Whole-story plot validator, maths formula rendering, calculation-integrity fixes; regression tests added.
+- [ ] Re-run live long-answer + Bolt story tests after fixes — blocked: Cloudflare Workers AI daily free allocation used up; Nemotron/Groq keys not available to the preview.
+- [ ] French Revolution timeline had 3 wrong dates the fact-checker missed (6-claim budget) — needs timeline-row prioritisation and a live re-run.

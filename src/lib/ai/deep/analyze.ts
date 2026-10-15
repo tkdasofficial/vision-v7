@@ -18,7 +18,18 @@ export type RequestAnalysis = {
   complex: boolean;
   /** Explicit word/script/commentary/consistency rules. Optional so older callers and fixtures stay valid. */
   instructions?: Instructions;
+  /** Figures the user supplied for a calculation ("6%", "$200,000"); the answer must keep using them. */
+  inputs?: string[];
 };
+
+/** Percentages and money amounts stated in a calculation request. */
+export function parseInputs(t: string): string[] {
+  if (!/\b(calculat|comput|solve|work out|how much|monthly payment|interest|invest|loan|mortgage)/i.test(t)) return [];
+  const out = new Set<string>();
+  for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s?%/g)) out.add(`${m[1]}%`);
+  for (const m of t.matchAll(/(?:\$|USD\s?|€|£|₹)\s?(\d{1,3}(?:,\d{3})+|\d{4,})(?:\.\d+)?/g)) out.add(m[1].replace(/,/g, ""));
+  return [...out].slice(0, 8);
+}
 
 /** Resource cap only (not a validation assumption): requests above this are refused honestly, never shrunk. */
 export const MAX_ITEMS = 1000;
@@ -76,5 +87,6 @@ export function analyzeRequest(text: string): RequestAnalysis {
   const instructions = parseInstructions(t);
   const hasRules = !!instructions.words || !!instructions.maxChars || instructions.scripts.length > 0 || instructions.noCommentary || !!instructions.noHeadings || instructions.consistency || !!instructions.requiredNames?.length;
   const complex = !!items || wantsJson || !!allowedDurations || length === "detailed" || t.length > 600 || hasRules;
-  return { items, length, wantsJson, allowedDurations, totalDuration, complex, ...(hasRules ? { instructions } : {}) };
+  const inputs = parseInputs(t);
+  return { items, length, wantsJson, allowedDurations, totalDuration, complex: complex || inputs.length > 0, ...(hasRules ? { instructions } : {}), ...(inputs.length ? { inputs } : {}) };
 }

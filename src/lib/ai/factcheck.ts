@@ -30,6 +30,8 @@ const contentWords = (s: string) => [...new Set(s.toLowerCase().replace(/,(?=\d{
 /** Creative, code, opinion and conversational requests are not fact-checked. */
 export function needsFactCheck(request: string, answer: string): boolean {
   if (answer.length < FACTCHECK_LIMITS.minAnswerChars) return false;
+  // Calculations on the user's own figures are checked by arithmetic validators, not web pages.
+  if (/\b(calculat\w*|comput\w*|solve|work out|evaluate|how much will|monthly payment|amortization|compound interest)\b/i.test(request)) return false;
   if (/\b(write|compose|draft|poem|story|lyrics|joke|imagine|fiction|code|function|script|regex|translate|rewrite|paraphrase|summari[sz]e (this|the following))\b/i.test(request)) return false;
   return allClaims(answer).length > 0;
 }

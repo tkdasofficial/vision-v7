@@ -95,12 +95,23 @@ export function validateCandidate(text: string, a: RequestAnalysis, finishReason
   } else if (a.items) issues.push(...checkSequence(extractItemNumbers(text, a.items.noun), a.items.count));
   if (a.wantsJson) issues.push(...checkJson(text));
   issues.push(...checkDurations(text, a));
+  if (a.inputs?.length) issues.push(...checkInputs(text, a.inputs));
   issues.push(...checkStructure(text));
   issues.push(...checkContinuity(text));
   // Whole-story plot check: every scene is read together, not one at a time.
   if (a.items && /^(scene|prompt|clip|shot|part|chapter|panel|episode|beat)s?$/i.test(a.items.noun)) issues.push(...checkPlot(text, a.items.noun));
   if (a.instructions) issues.push(...checkInstructions(text, a.instructions, a.items?.noun ?? null));
   return issues;
+}
+
+/** The figures the user gave must still be the ones used: an answer that silently swaps 6% for 9.569% fails. */
+export function checkInputs(text: string, inputs: string[]): Issue[] {
+  const flat = text.replace(/\{,\}|,|\\[,;! ]|\\%/g, (m) => (m.includes("%") ? "%" : "")).replace(/\s+%/g, "%");
+  const missing = inputs.filter((v) => {
+    if (v.endsWith("%")) { const n = Number(v.slice(0, -1)); return !new RegExp(`(?<![\\d.])${v.slice(0, -1).replace(".", "\\.")}%`).test(flat) && !flat.includes(String(n / 100)); }
+    return !new RegExp(`(?<!\\d)${v}(?!\\d)`).test(flat);
+  });
+  return missing.length ? [{ code: "inputs_changed", message: `The answer must use the figures the user gave (${missing.join(", ")}); do not replace them with other values. Recalculate every result from the original inputs.` }] : [];
 }
 
 /** Scene continuity: when scenes state "Ending state:" / "Starting state:", each start must match the previous end. */
@@ -132,7 +143,7 @@ export function checkTables(text: string): Issue[] {
     const bad = rows.map((r, i) => (r.length !== head.length ? i + 1 : 0)).filter(Boolean);
     if (bad.length) issues.push({ code: "table_columns", message: `${name}: row(s) ${bad.join(", ")} don't have ${head.length} cells.` });
     const seen = new Set<string>(), dups: number[] = [];
-    rows.forEach((r, i) => { const k = r.join("|").toLowerCase(); if (k.replace(/\|/g, "").trim() && seen.has(k)) dups.push(i + 1); seen.add(k); });
+    rows.forEach((r, i) => { const k = r.join("|").toLowerCase(); if (/^[\s*$€£₹\\-]*-?[\d.,]+[\s*]*$/.test(r[0] ?? "")) return; /* data rows (2, 4, 4, 4…) legitimately repeat */ if (k.replace(/\|/g, "").trim() && seen.has(k)) dups.push(i + 1); seen.add(k); });
     if (dups.length) issues.push({ code: "table_duplicate", message: `${name}: duplicate row(s) ${dups.join(", ")}.` });
     const num = (s: string) => { const v = s.replace(/[*_$€£₹,%\s]/g, ""); return /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : NaN; };
     const ti = rows.findIndex((r) => /^\**\s*(grand\s+)?total\s*\**$/i.test(r[0] ?? ""));
