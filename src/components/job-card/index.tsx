@@ -20,7 +20,7 @@ function ArtifactButton({ id, name, size }: { id: string; name: string; size?: s
     </Button>
   );
 }
-import CodeBlock from "@/components/chat/code-block";
+import CodeBlock from "@/components/chat/code";
 import { looksLikeCode } from "@/components/chat/highlight";
 
 const md = { pre: ({ children }: any) => <>{children}</>, code: ({ children, className, node }: any) => {

@@ -1,10 +1,10 @@
 import { Children, isValidElement, useMemo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import CodeBlock from "@/components/chat/code-block";
+import CodeBlock from "@/components/chat/code";
 import TextCopyBox from "@/components/chat/text-copy-box";
-import CopyReadyBox from "@/components/chat/copy-ready-box";
-import TableReply from "@/components/chat/table-reply";
+import CopyReadyBox from "@/components/chat/markdown";
+import TableReply from "@/components/chat/table";
 import { dedupeDeliverables } from "@/lib/markdown-plain";
 
 // "markdown" fences are copy-ready deliverables (rendered); text/prompt/untagged fences stay literal.
