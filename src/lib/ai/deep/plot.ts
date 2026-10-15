@@ -10,7 +10,7 @@ const OBJ = "(?:[a-z-]+\\s){0,2}?(?:core|crystal|key|battery|cell|orb|gem|chip|m
 const CONSUME_ACTIVE = new RegExp(`\\b(?:insert|install|plug|slot|fit|feed|consume|destroy|shatter|smash|crush|burn|sacrifice|drain|spend|break|drop|throw|toss|lose|use[sd]?\\s+up|give|hand|lock)(?:s|es|ed|d|ing)?\\b[^.\\n]{0,40}?\\b(?:the|its|his|her|their|a|an)\\s+(${OBJ})\\b`, "gi");
 const CONSUME_PASSIVE = new RegExp(`\\b(?:the|its|his|her|their)\\s+(${OBJ})\\s+(?:is\\s+|are\\s+|was\\s+)?(?:shatter|destroy|consum|burn(?:s|ed)?\\s+out|crumbl|dissolv|spent|used\\s+up|explod|melt|vanish|disintegrat|absorb)`, "gi");
 const USE_AGAIN = /\b(hold|grab|pick(?:s|ed)?\s+up|clutch|carr(?:y|ies|ied)|insert|install|plug|slot|plac|use|raise|lift|activat|wield|reveal|pull(?:s|ed)?\s+out|take|offer|present)/i;
-const RESTORE = /\b(another|second|new|spare|replacement|backup|duplicate|retriev|recover|reclaim|remov|extract|pull(?:s|ed)?\s+(?:it\s+)?(?:back\s+)?out|repair|rebuil|recharg|restor|reform|regenerat|glu|piece[sd]?\s+together|rescu|found|find|returns?\s+it|takes?\s+(?:it\s+)?back|gets?\s+(?:it\s+)?back)/i;
+const RESTORE = /\b(another|second|new|spare|replacement|backup|duplicate|retriev|recover|reclaim|remov|extract|pull(?:s|ed|ing)?\b[^.\n]{0,30}?\b(?:back\s+)?out|(?:tak|get|bring)(?:s|es|ing)?\b[^.\n]{0,30}?\bback\b|repair|rebuil|recharg|restor|reform|regenerat|glu|piece[sd]?\s+together|rescu|found|find|returns?\s+it|takes?\s+(?:it\s+)?back|gets?\s+(?:it\s+)?back)/i;
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").replace(/s$/, "").trim();
 const head = (s: string) => norm(s).split(" ").slice(-2).join(" ");
