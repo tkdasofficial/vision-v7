@@ -21,7 +21,7 @@ type Props = {
 };
 
 /** Shared full-screen navigation surface, also used by the preserved /search URL. */
-export default function AppDrawerView({ onClose, onNewChat, onSelectChat, activeChatId, initialSearch = false, onSearchBack, resetKey = 0 }: Props & { initialSearch?: boolean; onSearchBack?: () => void; resetKey?: number }) {
+export default function AppDrawerView({ onClose, onNewChat, onSelectChat, activeChatId, initialSearch = false, onSearchBack, resetKey = 0, onOpenSearch }: Props & { onOpenSearch?: () => void; initialSearch?: boolean; onSearchBack?: () => void; resetKey?: number }) {
   const { history, renameChat } = useChatHistory();
   const [searching, setSearching] = useState(initialSearch);
   // Drawer content stays mounted during the morph so its exit animation is visible.
@@ -31,6 +31,7 @@ export default function AppDrawerView({ onClose, onNewChat, onSelectChat, active
   const morphTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const openSearch = () => {
+    if (onOpenSearch) { onOpenSearch(); return; }
     setMorphing(true);
     setScrolled(false);
     setSearching(true);

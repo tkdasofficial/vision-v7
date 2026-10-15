@@ -249,7 +249,7 @@ export default function NavigationGestures() {
           }
           if (gesture.kind === "pending" && gestureSurface(current.current.location.pathname) === "chat") {
             drag.current = null; suppressClick.current = true;
-            setDrawerSearch(true); setSearchFromChat(true); settleRef.current(true, 0, "left");
+            current.current.navigate(`/search?returnTo=${encodeURIComponent(current.current.location.pathname)}`);
             return;
           }
           if (gesture.kind === "drawer" && ((opened.current && sideRef.current === "left") || current.current.directDrawer)) {
@@ -361,6 +361,12 @@ export default function NavigationGestures() {
     onNewChat: () => { settleRef.current(false); current.current.navigate("/chat"); },
     onSelectChat: (id: string) => { settleRef.current(false); current.current.navigate(`/chat/${id}`); },
   }), []);
+  // The drawer's Search button hands off to the real Search page; the drawer's own panes fade out as it appears.
+  const openSearchPage = useMemo(() => () => {
+    const from = current.current.location.pathname;
+    current.current.navigate(`/search?returnTo=${encodeURIComponent(from)}`);
+    dismissRef.current();
+  }, []);
   const closeSearch = useMemo(() => () => settleRef.current(false), []);
   if (!enabled || directDrawer) return null;
   const drawerOpen = visible && side === "left";
@@ -369,7 +375,7 @@ export default function NavigationGestures() {
     {(visible || prewarmed) && createPortal(<div className="navigation-drawer" data-open={visible ? "true" : undefined} ref={(node) => { layer.current = node; if (node) applyProgress(node, progress.current); }}>
       <div className="navigation-drawer-scrim" aria-hidden="true" onClick={() => settleRef.current(false)} />
       <div className="navigation-drawer-panel" data-side="left" data-navigation-drawer role={drawerOpen ? "dialog" : undefined} aria-modal={drawerOpen ? true : undefined} aria-label="Workspace navigation">
-        <DrawerView {...drawerActions} resetKey={resetKey} initialSearch={drawerSearch} onSearchBack={searchFromChat ? closeSearch : undefined} activeChatId={location.pathname.match(/^\/chat\/([^/]+)$/)?.[1]} />
+        <DrawerView {...drawerActions} onOpenSearch={openSearchPage} resetKey={resetKey} initialSearch={drawerSearch} onSearchBack={searchFromChat ? closeSearch : undefined} activeChatId={location.pathname.match(/^\/chat\/([^/]+)$/)?.[1]} />
       </div>
       {visible && side === "right" && <div className="navigation-drawer-panel" data-side="right" data-navigation-drawer role="dialog" aria-modal="true" aria-label="Projects">
         <Projects onClose={drawerActions.onClose} />
