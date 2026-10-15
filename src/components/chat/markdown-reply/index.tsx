@@ -5,11 +5,14 @@ import CodeBlock from "@/components/chat/code";
 import TextCopyBox from "@/components/chat/text-copy-box";
 import CopyReadyBox from "@/components/chat/markdown";
 import TableReply from "@/components/chat/table";
+import { Callout, FlowDiagram, remarkCallouts, CALLOUT_TYPES, type CalloutType } from "@/components/chat/rich-blocks";
 import { dedupeDeliverables } from "@/lib/markdown-plain";
 
 // "markdown" fences are copy-ready deliverables (rendered); text/prompt/untagged fences stay literal.
 const rawLanguages = new Set(["", "text", "txt", "plain", "plaintext", "prompt"]);
 const renderedLanguages = new Set(["markdown", "md"]);
+const flowLanguages = new Set(["flow", "steps", "pipeline"]);
+const safeHref = (href?: string) => (href && /^(https?:|mailto:|#|\/)/i.test(href.trim()) ? href : undefined);
 
 const components: Components = {
   pre: ({ children, node }) => {
@@ -17,6 +20,7 @@ const components: Components = {
     if (!isValidElement<{ children?: ReactNode; className?: string }>(child)) return <pre>{children}</pre>;
     const language = child.props.className?.replace(/^language-/, "").toLowerCase() || "";
     const text = String(child.props.children ?? "").replace(/\n$/, "");
+    if (flowLanguages.has(language)) return <FlowDiagram source={text} />;
     if (renderedLanguages.has(language)) return <CopyReadyBox markdown={text} renderCode={(code, lang) => rawLanguages.has(lang) ? <TextCopyBox text={code} label="Text" /> : <CodeBlock code={code} language={lang} />} />;
     if (rawLanguages.has(language)) return <TextCopyBox text={text} label={language === "prompt" ? "Prompt" : "Text"} />;
     const codeNode = node?.children.find((item) => item.type === "element" && item.tagName === "code");
@@ -25,9 +29,17 @@ const components: Components = {
     return <CodeBlock code={text} language={language} filename={meta.match(/title="([^"]+)"/)?.[1]} />;
   },
   code: ({ children, className }) => <code className={className}>{children}</code>,
+  blockquote: ({ children, node }) => {
+    const type = String(node?.properties?.dataCallout ?? "") as CalloutType;
+    return CALLOUT_TYPES.includes(type) ? <Callout type={type}>{children}</Callout> : <blockquote>{children}</blockquote>;
+  },
+  a: ({ children, href }) => {
+    const safe = safeHref(href);
+    return safe ? <a href={safe} target={safe.startsWith("#") ? undefined : "_blank"} rel="noopener noreferrer nofollow">{children}</a> : <span>{children}</span>;
+  },
 };
 
 export default function MarkdownReply({ children }: { children: string }) {
   const source = useMemo(() => dedupeDeliverables(children), [children]);
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ ...components, table: ({ children: tableChildren, node }) => <TableReply node={node} markdown={source.slice(node?.position?.start.offset ?? 0, node?.position?.end.offset ?? source.length)}>{tableChildren}</TableReply> }}>{source}</ReactMarkdown>;
+  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkCallouts]} components={{ ...components, table: ({ children: tableChildren, node }) => <TableReply node={node} markdown={source.slice(node?.position?.start.offset ?? 0, node?.position?.end.offset ?? source.length)}>{tableChildren}</TableReply> }}>{source}</ReactMarkdown>;
 }
