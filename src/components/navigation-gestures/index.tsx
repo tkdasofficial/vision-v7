@@ -58,6 +58,7 @@ export default function NavigationGestures() {
   const progress = useRef(0);
   const frame = useRef(0);
   const opened = useRef(false);
+  const dismissRef = useRef<() => void>(() => {});
   const settleRef = useRef<(open: boolean, velocity?: number, to?: "left" | "right") => void>(() => {});
   const drag = useRef<Drag | null>(null);
   const target = useRef<Element | null>(null);
@@ -171,6 +172,7 @@ export default function NavigationGestures() {
     else frame.current = requestAnimationFrame(begin);
   };
   settleRef.current = settle;
+  dismissRef.current = dismiss;
   const sign = () => (sideRef.current === "right" ? -1 : 1);
 
   const previous = useRef<{ path: string; index?: number } | null>(null);
