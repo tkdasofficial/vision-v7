@@ -23,7 +23,7 @@ export function checkObjectReuse(scenes: Scene[]): Issue[] {
   for (const sc of scenes) {
     // First: does this scene reuse something already gone?
     for (const [obj, at] of gone) {
-      const re = new RegExp(`\\b${obj.replace(/\s+/g, "\\s+")}s?\\b`, "i");
+      const re = new RegExp(`\\b(?:${obj.replace(/\s+/g, "\\s+")}|(?:the|its|his|her)\\s+${obj.split(" ").pop()})s?\\b`, "i");
       const hits = sentences(sc.body).filter((s) => re.test(s));
       if (!hits.length) continue;
       if (hits.some((s) => RESTORE.test(s)) || RESTORE.test(sc.body.slice(0, 400)) && re.test(sc.body.slice(0, 400))) { gone.delete(obj); continue; }
@@ -64,6 +64,28 @@ const DISABLED = /\b(powers?\s+down|powered\s+down|shuts?\s+down|shut\s+down|goe
 const RECOVER = /\b(reboot|restart|wak(?:e|es|ing)|woke|powers?\s+(?:back\s+)?(?:on|up)|comes?\s+back\s+online|back\s+online|regain|recover|reviv|recharg|repair|restor|freed|frees|escap|rescu|breaks?\s+free|flicker(?:s|ing)?\s+(?:back\s+)?(?:on|to\s+life)|jolt(?:s|ed)?\s+(?:back\s+)?(?:awake|to\s+life)|spark(?:s|ed)?\s+(?:back\s+)?to\s+life|eyes\s+(?:glow|light)\s+(?:again|back))/i;
 const ACTIVE = /\b(runs?|sprints?|climbs?|jumps?|leaps?|fights?|walks?|flies|grabs?|races?|dashes|charges|speaks?|says|shouts)\b/i;
 const LIMB = /\b(?:loses|lost|severs?|severed|rips?\s+off|torn\s+off|crushes|crushed|breaks|broke|snaps|snapped)\s+(?:his|her|its|their|the\s+robot's|\w+'s)\s+((?:left|right)\s+)?(arm|leg|hand|antenna|eye)\b/gi;
+
+const WORN = "scarf|hat|cap|cape|cloak|helmet|backpack|jacket|coat|goggles|glasses|boots|mask|necklace|badge|bandana|hood|gloves?|armou?r|harness";
+const TAKE_OFF = new RegExp(`\\b(?:takes?\\s+off|took\\s+off|remov(?:es|ed|ing)|hang(?:s|ing)?|hung|unwrap(?:s|ped)?|unti(?:es|ed)|gives?\\s+away|gave\\s+away|hands?\\s+(?:over\\s+)?|drap(?:es|ed)|lays?\\s+down|leav(?:es|ing)\\s+behind|left\\s+behind|sets?\\s+aside|loses?|lost|tears?|tore)\\b[^.\\n]{0,25}?\\b(?:his|her|its|their)\\s+((?:[a-z-]+\\s)?(?:${WORN}))\\b`, "gi");
+const PUT_ON = /\b(puts?\s+(?:\w+\s+){0,3}on|wraps?|ties?|retie|grabs?|picks?\s+up|takes?\s+(?:\w+\s+){0,3}(?:back|from)|dons?|slips?\s+(?:\w+\s+){0,3}on|retriev|wear(?:s|ing)?\s+(?:it|\w+)\s+again|once\s+more\s+around)/i;
+
+/** An accessory taken off in one scene cannot be worn later unless it is shown being put back on. */
+export function checkWornItems(scenes: Scene[]): Issue[] {
+  const issues: Issue[] = [];
+  const off = new Map<string, number>();
+  for (const sc of scenes) {
+    for (const [item, at] of off) {
+      const re = new RegExp(`\\b(?:his|her|its|their|the)\\s+(?:[a-z-]+\\s)?${item}\\b`, "i");
+      const hits = sentences(sc.body).filter((x) => re.test(x));
+      if (!hits.length) continue;
+      if (hits.some((x) => PUT_ON.test(x))) { off.delete(item); continue; }
+      issues.push({ code: "plot_object_reuse", items: [at, sc.num], message: `Scene ${sc.num} shows Bolt's ${item} on him again, but it was taken off in scene ${at} and never put back on. Show the ${item} being put back on (or keep it off) and re-check scenes ${at}–${Math.min(scenes[scenes.length - 1].num, sc.num + 1)}.`.replace("Bolt's", "the character's") });
+      off.delete(item);
+    }
+    for (const m of sc.body.matchAll(TAKE_OFF)) off.set(m[1].toLowerCase().split(/\s+/).pop()!, sc.num);
+  }
+  return issues;
+}
 
 /** Disabled characters must be shown recovering before acting; lost limbs stay lost until repaired. */
 export function checkCharacterState(scenes: Scene[]): Issue[] {
@@ -111,5 +133,5 @@ export function checkPlot(text: string, noun: string | null): Issue[] {
   const body = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/^```[^\n]*\n?|```$/g, ""));
   const scenes = splitItems(body, noun ?? "scene");
   if (scenes.length < 3) return [];
-  return [...checkObjectReuse(scenes), ...checkCameraDirection(scenes), ...checkCharacterState(scenes), ...checkTransitions(scenes)];
+  return [...checkObjectReuse(scenes), ...checkWornItems(scenes), ...checkCameraDirection(scenes), ...checkCharacterState(scenes), ...checkTransitions(scenes)];
 }
