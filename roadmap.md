@@ -44,3 +44,4 @@
 - [x] Whole-story plot validator, maths formula rendering, calculation-integrity fixes; regression tests added.
 - [ ] Re-run live long-answer + Bolt story tests after fixes — blocked: Cloudflare Workers AI daily free allocation used up; Nemotron/Groq keys not available to the preview.
 - [ ] French Revolution timeline had 3 wrong dates the fact-checker missed (6-claim budget) — needs timeline-row prioritisation and a live re-run.
+- [ ] 25-scene Bolt live story test (max 5 attempts) — blocked: Cloudflare AI daily free allowance used up; backup NVIDIA/Groq keys not set. Attempt 1 ran 2026-10-15, no story produced.
