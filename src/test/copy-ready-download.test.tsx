@@ -90,7 +90,7 @@ describe("copy-ready rendering", () => {
   });
   it("keeps code and JSON in the code viewer and CSV structure intact", () => {
     render(<MarkdownReply>{"```json\n{\"a\": 1}\n```\n\n```csv\nname,qty\nA,-3\n```\n\n```python\ndef f():\n    return 1\n```"}</MarkdownReply>);
-    const viewers = screen.getAllByRole("button", { name: "Open code full screen" });
+    const viewers = Array.from(document.querySelectorAll(".content-block-body"));
     expect(JSON.parse(viewers[0].textContent ?? "")).toEqual({ a: 1 });
     expect(viewers[1].textContent).toBe("name,qty\nA,-3");
     expect(viewers[2].textContent).toBe("def f():\n    return 1");
