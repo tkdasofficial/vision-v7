@@ -2,6 +2,10 @@ import { useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import { normalizeMath } from "@/lib/math";
 import { Check, Copy, Download, Expand } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import FullScreenCodeView from "@/components/chat/full-screen-code-view";
@@ -19,7 +23,7 @@ export default function MarkdownBlock({ markdown, label = "Markdown", renderCode
   const body = useRef<HTMLDivElement>(null);
   const plain = markdownToPlainText(markdown);
   const copyHtml = () => body.current?.innerHTML;
-  const render = () => <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={renderCode ? { pre: ({ children }) => { const c: any = Array.isArray(children) ? children[0] : children; const lang = String(c?.props?.className ?? "").replace(/^language-/, ""); return <>{renderCode(String(c?.props?.children ?? "").replace(/\n$/, ""), lang)}</>; } } : undefined}>{markdown}</ReactMarkdown>;
+  const render = () => <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]} rehypePlugins={[[rehypeKatex, { throwOnError: false, strict: "ignore" }]]} components={renderCode ? { pre: ({ children }) => { const c: any = Array.isArray(children) ? children[0] : children; const lang = String(c?.props?.className ?? "").replace(/^language-/, ""); return <>{renderCode(String(c?.props?.children ?? "").replace(/\n$/, ""), lang)}</>; } } : undefined}>{normalizeMath(markdown)}</ReactMarkdown>;
   const lines = markdown.split("\n").length;
 
   return (
