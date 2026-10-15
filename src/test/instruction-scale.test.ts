@@ -140,14 +140,14 @@ describe("live 25-scene run: output cap and time budget", () => {
 describe("live 25-scene run: parallel parts share one outline", () => {
   it("asks the hidden plan for a per-scene state outline and tells every part to follow it", async () => {
     const m = mockModel(); const sent: string[] = [];
-    const call = async (msgs: ChatMsg[]) => { sent.push(msgs.map((x) => String(x.content)).join("\n")); return /numbered outline/.test(String(msgs[0].content)) ? ok("1. Bolt finds the core") : m.call(msgs); };
+    const call = async (msgs: ChatMsg[]) => { sent.push(msgs.map((x) => String(x.content)).join("\n")); return /numbered outline/.test(String(msgs[0].content)) ? ok(seq(25).map((n) => `${n}. Bolt event ${n}, core held by Bolt`).join("\n")) : m.call(msgs); };
     await runDeepPipeline({ messages: [{ role: "system", content: "sys" }], analysis: analyzeRequest(req(25)), call, plan: true, request: req(25) });
     expect(sent[0]).toMatch(/one line per scene \(1 to 25\)/);
-    expect(sent.filter((x) => /Follow the internal plan's outline lines for Scene 6 to 12/.test(x))).toHaveLength(1);
+    expect(sent.filter((x) => /Follow the internal plan's outline lines for Scene 5 to 10/.test(x))).toHaveLength(1);
   });
   it("retries a failed parallel part once instead of leaving it missing (seen live: scenes 21-24)", async () => {
     const m = mockModel(); let failed = false;
-    const call = async (msgs: ChatMsg[]) => { if (!failed && /Write ONLY Scene 19 to Scene 24/.test(String(msgs.at(-1)!.content))) { failed = true; return { ok: false as const, status: 504, reason: "timeout" }; } return m.call(msgs); };
+    const call = async (msgs: ChatMsg[]) => { if (!failed && /Write ONLY Scene 16 to Scene 20/.test(String(msgs.at(-1)!.content))) { failed = true; return { ok: false as const, status: 504, reason: "timeout" }; } return m.call(msgs); };
     const r = await runDeepPipeline({ messages: [], analysis: analyzeRequest(req(25)), call });
     expect(r.ok && r.remaining).toEqual([]);
   });

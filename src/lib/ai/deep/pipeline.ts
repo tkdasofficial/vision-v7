@@ -12,7 +12,21 @@ export type ModelCall = (messages: ChatMsg[]) => Promise<CallResult>;
 /** Resource limits. budgetMs covers every batch plus review/correction of the largest supported request (work is detached from the browser, see chat-background).
  *  Resource limits. Counts are batch sizes and caps on work per request, never assumptions about how many items exist.
  *  batchItems: sections per generation/correction call (keeps each under the 8k-token output cap); batchThreshold: requests up to this many sections are written in one call; reviewWindowChars: text per review call; maxReviewWindows: review calls per pass. */
-export const DEEP_LIMITS = { maxCorrections: 2, maxContinuations: 3, budgetMs: 600_000, batchItems: 6, batchConcurrency: 4, batchThreshold: 12, reviewWindowChars: 24_000, maxReviewWindows: 6 };
+export const DEEP_LIMITS = { maxCorrections: 2, maxContinuations: 3, budgetMs: 600_000, batchItems: 6, batchConcurrency: 4, batchThreshold: 12, storyBatchItems: 5, reviewWindowChars: 24_000, maxReviewWindows: 6, planAttempts: 3, genReserveMs: 200_000 };
+
+/** Nouns whose items form one continuous story (shared characters, objects and plot). */
+export const STORY_NOUN = /^(scene|prompt|clip|shot|part|chapter|panel|episode|beat)s?$/i;
+
+/** Parses a numbered outline ("1. …" / "Scene 1: …") and reports which of 1..count are missing. */
+export function parseOutline(text: string, count: number): { ok: boolean; lines: Map<number, string>; missing: number[] } {
+  const lines = new Map<number, string>();
+  for (const m of text.matchAll(/^[ \t]*(?:[-*][ \t]*)?(?:\*\*)?(?:[A-Za-z]+[ \t]+)?(\d{1,4})(?:\*\*)?[ \t]*[.):—–-][ \t]*(?:\*\*)?(.+)$/gm)) {
+    const n = Number(m[1]), body = m[2].replace(/\*\*/g, "").trim();
+    if (n >= 1 && n <= count && body.length >= 8 && !lines.has(n)) lines.set(n, body);
+  }
+  const missing = Array.from({ length: count }, (_, k) => k + 1).filter((n) => !lines.has(n));
+  return { ok: missing.length === 0, lines, missing };
+}
 
 export type DeepResult =
   | { ok: true; text: string; remaining: Issue[]; corrections: number; continuations: number; stages: string[] }
@@ -24,6 +38,7 @@ export function planAddendum(a: RequestAnalysis): string {
   // Paragraphs/sentences/lines are parts of one text; labelling them ("Paragraph 1") breaks plain-text and "no headings" requests.
   if (a.items && (/^(paragraph|sentence|line|verse|stanza)s?$/i.test(a.items.noun) || a.instructions?.noHeadings)) lines.push(`Deliver exactly ${a.items.count} ${a.items.noun}s in order, separated by blank lines, with no labels or numbers in front of them.`);
   else if (a.items) lines.push(`Deliver exactly ${a.items.count} ${a.items.noun}s, labelled "${cap(a.items.noun)} 1" … "${cap(a.items.noun)} ${a.items.count}", in order. Do not add, merge, skip or reorder any.`);
+  if (a.items && STORY_NOUN.test(a.items.noun) && a.instructions?.scripts?.some((r) => r.part === "dialogue" && r.optional)) lines.push(`Dialogue is "where appropriate": give spoken lines to the ${a.items.noun}s where a character naturally speaks (reactions, warnings, the climax and the ending), and write "None" only where silence fits.`);
   if (a.length === "short") lines.push("The user asked for a short answer: keep the final reply brief while keeping every required element.");
   if (a.length === "detailed") lines.push("The user asked for detail: give a complete, thorough answer covering every requested element.");
   if (a.wantsJson) lines.push("Output valid JSON in a single ```json fenced block.");
@@ -84,22 +99,47 @@ export async function runDeepPipeline(opts: {
   let messages = opts.messages;
 
   // 0. Hidden plan: analyze the task and outline the solution; never shown to the user.
-  // Batched answers are written in parallel parts, so the plan must fix every part's events and object/character
-  // state up front; each part follows it instead of guessing what the parts it cannot see contain.
-  const willBatch = !!opts.analysis.items && opts.analysis.items.count > Math.max(L.batchItems, L.batchThreshold);
-  const outlineAsk = willBatch ? ` Then give a numbered outline with exactly one line per ${opts.analysis.items!.noun} (1 to ${opts.analysis.items!.count}): its event, location, and the state at its end of every key object (who holds it, where it is, used up or not), every character (position, damage, shut down or active) and every accessory. Each line must follow causally from the previous one.` : "";
+  // Multi-part stories need a per-item state outline fixed up front; every part (and every correction) follows
+  // the same validated outline instead of guessing what the parts it cannot see contain.
+  const needsOutline = !!(opts.plan && request && opts.analysis.items && opts.analysis.items.count >= 3 && STORY_NOUN.test(opts.analysis.items.noun));
+  // Planned stories are written in small parts (each reliably finishes in one call); other lists keep the general threshold.
+  const partSize = needsOutline ? L.storyBatchItems : L.batchItems;
+  const willBatch = !!opts.analysis.items && opts.analysis.items.count > (needsOutline ? partSize : Math.max(L.batchItems, L.batchThreshold));
+  const outlineAsk = needsOutline || willBatch ? ` Then give a numbered outline with exactly one line per ${opts.analysis.items!.noun} (1 to ${opts.analysis.items!.count}), each starting with its number ("1." … "${opts.analysis.items!.count}."): its event, location, and the state at its end of every key object (who holds it, where it is, used up or not), every character (position, damage, shut down or active) and every accessory. Line 1 must establish the starting situation exactly as the user states it (for example who has already taken or hidden what). Each line must follow causally from the previous one; an object may only change holder or place in a line that says how.` : "";
+  let outline: Map<number, string> | null = null;
   if (opts.plan && request) {
     stages.push("plan"); prog("planning");
-    const p = await opts.call([
-      { role: "system", content: "Analyze the user's request before anyone answers it. Output a concise internal plan: the exact task, required format/length/counts, constraints, sub-problems in order, facts or calculations to double-check, and likely pitfalls. Do not write the answer." + outlineAsk },
-      { role: "user", content: clip(request, 20000) },
-    ]);
-    if (p.ok && p.text.trim()) {
+    // Root cause seen live: the reasoning model spent its whole output allowance thinking about a long outline and
+    // returned no visible text, so the story was written without a plan. Retry with a compact outline-only ask;
+    // a required outline that never validates stops the run instead of silently writing an unplanned story.
+    let planText = "", why = "";
+    for (let attempt = 1; attempt <= L.planAttempts && !overBudget(); attempt++) {
+      const compact = attempt > 1 ? " Keep it short: skip the analysis and output only the numbered outline, one line each, no reasoning." : "";
+      const p = await opts.call([
+        { role: "system", content: "Analyze the user's request before anyone answers it. Output a concise internal plan: the exact task, required format/length/counts, constraints, sub-problems in order, facts or calculations to double-check, and likely pitfalls. Do not write the answer." + outlineAsk + compact },
+        { role: "user", content: clip(request, 20000) },
+      ]);
+      if (!p.ok) { why = `planning call failed (${p.status} ${p.reason})`; stages.push("plan-retry"); continue; }
+      const t = p.text.trim();
+      if (!t) { why = `planning returned no text${p.finishReason === "length" ? " (output limit reached)" : ""}`; stages.push("plan-retry"); continue; }
+      if (needsOutline) {
+        const o = parseOutline(t, opts.analysis.items!.count);
+        if (!o.ok) { why = `outline incomplete: missing lines ${ranges(o.missing)}`; stages.push("plan-retry"); continue; }
+        outline = o.lines;
+      }
+      planText = t; break;
+    }
+    if (planText) {
+      if (needsOutline) stages.push("plan-validated");
       const [sys, ...rest] = messages;
-      const note = `\n\nInternal plan (hidden from the user; follow it, do not mention it):\n${clip(p.text.trim(), 6000)}`;
+      const note = `\n\nInternal plan (hidden from the user; follow it, do not mention it):\n${clip(planText, 8000)}`;
       messages = sys?.role === "system" ? [{ ...sys, content: `${String(sys.content)}${note}` }, ...rest] : [{ role: "system", content: note }, ...messages];
+    } else if (needsOutline) {
+      stages.push("plan-failed");
+      return { ok: false, status: 503, reason: `story plan could not be created: ${why || "time limit"}`, stages };
     } else stages.push("plan-failed");
   }
+  const outlineFor = (a: number, b: number) => outline ? `\nOutline lines to follow exactly:\n${Array.from({ length: b - Math.max(1, a - 1) + 1 }, (_, k) => Math.max(1, a - 1) + k).map((n) => `${n}. ${outline!.get(n)}`).join("\n")}` : "";
 
   const noun = opts.analysis.items?.noun ?? null;
   const count = opts.analysis.items?.count ?? 0;
@@ -115,39 +155,43 @@ export async function runDeepPipeline(opts: {
   stages.push("generate"); prog("generating");
   let text = "", finish: string | null = "stop", continuations = 0;
   let pending: number[] = [];
-  if (noun && count > Math.max(L.batchItems, L.batchThreshold)) {
+  if (noun && willBatch) {
     stages.push("batched");
     // Batches stay under one call's output limit. The first batch is written alone (it introduces characters,
     // objects and format); later batches run batchConcurrency at a time against it plus the hidden plan, so
     // long requests finish in time. Whole-answer validation and the plot checker catch any seams afterwards.
     const groups: number[][] = [];
-    for (let a = 1; a <= count; a += L.batchItems) groups.push(Array.from({ length: Math.min(count, a + L.batchItems - 1) - a + 1 }, (_, k) => a + k));
+    for (let a = 1; a <= count; a += partSize) groups.push(Array.from({ length: Math.min(count, a + partSize - 1) - a + 1 }, (_, k) => a + k));
     const runGroup = (want: number[], base: string) => {
       const a = want[0], b = want[want.length - 1];
       const ctx = base ? `\n\nAlready written (continuity reference — keep characters, clothing, objects, terms and format identical):\n${contextFor(base, a)}` : "";
-      const follow = willBatch && opts.plan ? `\nFollow the internal plan's outline lines for ${label} ${Math.max(1, a - 1)} to ${b} exactly: ${label} ${a} starts from the end state of ${label} ${a - 1 || 1}, and object possession and character state must match the outline.` : "";
+      const follow = willBatch && opts.plan ? `\nFollow the internal plan's outline lines for ${label} ${Math.max(1, a - 1)} to ${b} exactly: ${label} ${a} starts from the end state of ${label} ${a - 1 || 1}, and object possession and character state must match the outline.${outlineFor(a, b)}` : "";
       return opts.call([...messages, { role: "user", content: `This answer has ${count} ${noun}s in total and is written in parts. Write ONLY ${label} ${a} to ${label} ${b}, labelled "${label} N", following every requirement above. No intro or closing remarks.${follow}${ctx}` }]);
     };
     const take = (want: number[], r: CallResult) => {
       if (!r.ok) return false;
       const got = splitSections(r.text, noun).sections.map((x) => x.num).filter((n) => want.includes(n));
       // Explicit completion check per batch: sections the batch skipped stay pending for correction.
+      // Completed parts are kept immediately; a later failed part never erases them.
       text = got.length ? (spliceSections(text, r.text, noun, got) ?? text) : text;
       if (r.finishReason === "length") stages.push("batch-truncated");
-      return true;
+      return got.length > 0;
     };
-    const first = await runGroup(groups[0], "");
+    // Generation stops early enough to leave time for validation and targeted correction.
+    const genOver = () => now() - start > L.budgetMs - L.genReserveMs;
+    let first = await runGroup(groups[0], "");
+    if (!first.ok && first.status !== 499 && !genOver()) { stages.push("part-retry"); first = await runGroup(groups[0], ""); }
     if (!first.ok) return { ok: false, status: first.status, reason: first.reason, stages };
-    take(groups[0], first);
+    if (!take(groups[0], first)) pending.push(...groups[0]);
     for (let g = 1; g < groups.length; g += L.batchConcurrency) {
       const wave = groups.slice(g, g + L.batchConcurrency);
-      if (overBudget()) { pending.push(...groups.slice(g).flat()); break; }
+      if (genOver()) { pending.push(...groups.slice(g).flat()); break; }
       const base = text;
       const res = await Promise.all(wave.map((w) => runGroup(w, base)));
       const failed: number[][] = [];
       res.forEach((r, k) => { if (!take(wave[k], r)) failed.push(wave[k]); });
-      // One sequential retry per failed part before it is left to the correction loop.
-      for (const w of failed) { if (overBudget() || !take(w, await runGroup(w, text))) pending.push(...w); }
+      // One sequential retry per failed part (same plan) before it is left to the correction loop.
+      for (const w of failed) { stages.push("part-retry"); if (genOver() || !take(w, await runGroup(w, text))) pending.push(...w); }
     }
     if (!text) text = "";
   } else {
@@ -187,11 +231,15 @@ export async function runDeepPipeline(opts: {
     for (const w of windows.slice(0, L.maxReviewWindows)) {
       if (overBudget()) break;
       const part = windows.length > 1 ? `\n\nYou are reviewing ${label} ${w.from}–${w.to} of ${count}.` : "";
-      const r = await opts.call([
+      const ask = (): Promise<CallResult> => opts.call([
         { role: "system", content: REVIEW_SYSTEM },
         { role: "user", content: `User request:\n${clip(request, 12000)}${consistency}${part}${w.from > 1 ? ref : ""}\n\nDraft answer:\n${w.body}` },
       ]);
-      if (!r.ok) { stages.push("review-failed"); continue; }
+      // An empty reply (seen live: the reasoning model used its whole allowance thinking) is a failed review, not an
+      // issue to "correct"; retry it once, then disclose the gap instead of inventing a finding.
+      let r = await ask();
+      if ((!r.ok || !r.text.trim()) && !overBudget()) { stages.push("review-retry"); r = await ask(); }
+      if (!r.ok || !r.text.trim()) { stages.push("review-failed"); continue; }
       done++;
       for (const m of parseReview(r.text).issues) {
         const nums = noun ? [...m.matchAll(new RegExp(`\\b${noun}s?\\s*#?(\\d{1,4})`, "gi"))].map((x) => Number(x[1])).filter((n) => n >= 1 && n <= count) : [];
@@ -206,6 +254,7 @@ export async function runDeepPipeline(opts: {
 
   // 3. Deterministic validation + independent review → bounded correction → revalidate.
   stages.push("validate");
+  if (noun && STORY_NOUN.test(noun)) stages.push("plot-check");
   let issues = validateCandidate(text, opts.analysis, finish);
   if (opts.review && !issues.some((i) => i.code !== "truncated") && !overBudget()) {
     const r = await review();
@@ -228,7 +277,7 @@ export async function runDeepPipeline(opts: {
         const group = targets.slice(k, k + L.batchItems);
         const related = issues.filter((i) => i.items!.some((n) => group.includes(n))).map((i) => i.message);
         const r = await fix([...messages, { role: "assistant", content: clip(work, 40000) },
-          { role: "user", content: `Automatic verification found these problems:\n- ${related.join("\n- ")}\nRewrite ONLY ${noun} ${ranges(group)} to fix them (write any missing ones), keeping the same labels ("${label} N"), characters and story. Output only those ${noun}s, nothing else.${contextFor(work, group[0]) ? `\n\nContinuity reference:\n${contextFor(work, group[0])}` : ""}` }]);
+          { role: "user", content: `Automatic verification found these problems:\n- ${related.join("\n- ")}\nRewrite ONLY ${noun} ${ranges(group)} to fix them (write any missing ones), keeping the same labels ("${label} N"), characters and story. Every change must stay consistent with the neighbouring ${noun}s and the plan. Output only those ${noun}s, nothing else.${outlineFor(group[0], group[group.length - 1])}${contextFor(work, group[0]) ? `\n\nContinuity reference:\n${contextFor(work, group[0])}` : ""}` }]);
         if (!r.ok) break;
         const next = spliceSections(work, r.text, noun, group);
         if (next != null) { work = next; any = true; }

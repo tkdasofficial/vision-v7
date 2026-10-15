@@ -51,7 +51,7 @@ describe("Deep Thinking review loop", () => {
     expect(r.ok && r.text).toBe("2+2 = 4");
   });
   it("discloses when the review could not run instead of claiming verification", async () => {
-    const call = vi.fn().mockResolvedValueOnce(ok("answer")).mockResolvedValueOnce({ ok: false, status: 503, reason: "down" });
+    const call = vi.fn().mockResolvedValueOnce(ok("answer")).mockResolvedValue({ ok: false, status: 503, reason: "down" });
     const r = await runDeepPipeline({ messages: [], analysis: analyzeRequest("hi"), call, request: "hi", review: true });
     expect(r.ok && r.text).toMatch(/review step could not run/);
   });

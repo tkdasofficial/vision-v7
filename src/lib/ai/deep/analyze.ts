@@ -39,7 +39,7 @@ const WORD_NUM: Record<string, number> = {
   one: 1, eleven: 11, twelve: 12, fifteen: 15, twenty: 20,
 };
 const NOUNS = "scenes?|prompts?|items?|steps?|ideas?|examples?|points?|sections?|questions?|tips?|reasons?|files?|options?|names?|titles?|slides?|shots?|chapters?|paragraphs?|bullets?|recommendations?|findings?";
-const COUNT_RE = new RegExp(`\\b(\\d{1,4}|${Object.keys(WORD_NUM).join("|")})\\s+(?:[a-z-]+\\s+){0,2}?(${NOUNS})\\b`, "i");
+const COUNT_RE = new RegExp(`\\b(\\d{1,4}|${Object.keys(WORD_NUM).join("|")})(?:\\s+|-)(?:[a-z-]+\\s+){0,2}?(${NOUNS})\\b`, "i");
 
 export function singular(noun: string) {
   return noun.toLowerCase().replace(/s$/, "");

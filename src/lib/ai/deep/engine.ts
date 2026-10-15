@@ -64,8 +64,11 @@ export const ENGINE_LIMITS: ExecutionLimits = {
 /** Requests with a fixed number of separate deliverables are decomposed; everything else uses the single-answer pipeline. */
 export function shouldDecompose(a: RequestAnalysis): boolean {
   // Paragraphs/sentences/lines/bullets are parts of ONE text: writing them separately breaks flow and is slow.
-  return !!a.items && a.items.count >= 2 && a.items.count <= 20 && !a.wantsJson && !TEXT_UNITS.test(a.items.noun);
+  return !!a.items && a.items.count >= 2 && a.items.count <= 20 && !a.wantsJson && !TEXT_UNITS.test(a.items.noun) && !CONTINUOUS_STORY.test(a.items.noun);
 }
+
+/** Scenes/chapters of one story share plot and object state: they go through the planned, whole-story-validated pipeline. */
+const CONTINUOUS_STORY = /^(scene|chapter|episode|panel|beat|shot)s?$/i;
 
 const TEXT_UNITS = /^(paragraph|sentence|line|bullet|bullet point|point|word|verse|stanza)s?$/i;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

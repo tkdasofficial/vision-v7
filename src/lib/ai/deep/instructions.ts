@@ -119,7 +119,7 @@ export function splitDialogue(body: string): { dialogue: string; description: st
   // A quoted title in a heading line ("### Scene 1: \"Mission Briefing\"", "Title: \"…\"") is not dialogue.
   const titled = body.replace(/^\s*(?:#{1,6}\s.*|(?:\*\*)?(?:title|[\p{L}]+\s+\d{1,4})(?:\*\*)?\s*[:.—–-].*)$/gimu, (l) => l.replace(/[“"«][^”"»\n]*[”"»]/g, " ")).replace(/^\s*[:.—–-]?\s*(?:\*\*)?[“"«][^”"»\n]*[”"»]/, " ");
   // With an explicit dialogue field, quotes elsewhere (signs, on-screen text in the visual prompt) are description.
-  const field = /^[ \t]*(?:[-*][ \t]*)?(?:\*\*)?(?:[\p{L}]+[ \t]+)?dialog(?:ue)?s?(?:\*\*)?[ \t]*:/imu.exec(titled);
+  const field = /^[ \t]*(?:[-*][ \t]*)?(?:\*\*)?(?:[\p{L}]+[ \t]+)?dialog(?:ue)?s?(?:\*\*)?[ \t]*(?:\([^)\n]*\))?[ \t]*(?:\*\*)?[ \t]*:/imu.exec(titled);
   const onlyIn = (seg: string) => seg.replace(/[“"«]([^”"»\n]+)[”"»]/g, (_, q) => { dialogue.push(q); return " "; });
   let rest: string;
   if (field) {
@@ -132,7 +132,7 @@ export function splitDialogue(body: string): { dialogue: string; description: st
   // a parenthesised translation after the quote is not dialogue either.
   const quoted = dialogue.length > 0;
   // An explicit "Dialogue:" field means the other "Word:" lines are fields, not speakers.
-  const fielded = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:[\p{L}]+\s+)?dialog(?:ue)?(?:\*\*)?\s*:/imu.test(titled);
+  const fielded = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:[\p{L}]+\s+)?dialog(?:ue)?s?(?:\*\*)?\s*(?:\([^)\n]*\))?\s*(?:\*\*)?\s*:/imu.test(titled);
   rest = rest.replace(/^\s*(?:[-*]\s*)?(?:\*\*)?(?:(?:[\p{L}]+\s+)?dialog(?:ue)?|speech|[\p{Lu}][\p{L}]{1,20})(?:\*\*)?\s*(?:\([^)]*\))?\s*:\s*(.+)$/gimu, (all, line: string) => {
     if (quoted) return all;
     if (fielded && !/^\s*(?:[-*]\s*)?(?:\*\*)?(?:[\p{L}]+\s+)?(?:dialog(?:ue)?|speech)\b/iu.test(all)) return all;
@@ -152,6 +152,10 @@ function scriptShare(text: string, script: Script): { share: number; letters: nu
   if (!letters) return { share: 1, letters: 0 };
   return { share: (text.match(SCRIPT_RE[script]) ?? []).length / letters, letters };
 }
+
+/** Common French/Italian/Spanish/Portuguese/German words seen mixed into model-written Hindi dialogue (e.g. "nessuna", "aucune").
+ *  English is excluded on purpose: names and technical terms are legitimate code-switching. */
+const FOREIGN_WORDS = new Set("aucun aucune nessun nessuna nessuno rien pas avec pour mais très merci bonjour oui nous vous ils elles est sont voilà toujours jamais beaucoup encore ancora sempre grazie ciao perché molto sono siamo questo questa quello niente nulla adesso subito andiamo vamos gracias nada ahora siempre todo pero donde aquí también obrigado então agora nicht danke bitte jetzt immer nichts schnell".split(" "));
 
 const COMMENTARY = /^(?:sure|certainly|of course|here(?:'s| is| are)|i hope|let me know|hope you|feel free|note:|this story|in this story|enjoy)\b/i;
 
@@ -184,15 +188,22 @@ export function checkInstructions(text: string, ins: Instructions, noun: string 
   for (const rule of ins.scripts) {
     const bad: number[] = [];
     const noDialogue: number[] = [];
+    const foreign: { num: number; words: string[] }[] = [];
     for (const u of units) {
       const parts = splitDialogue(u.body);
       const part = rule.part === "dialogue" ? parts.dialogue : rule.part === "description" ? parts.description : u.body;
       const { share, letters } = scriptShare(part, rule.script);
       if (!letters) { if (rule.part === "dialogue") noDialogue.push(u.num); continue; }
-      if (share < 0.9) bad.push(u.num);
+      if (share < 0.9) { bad.push(u.num); continue; }
+      // A few foreign words can hide under the 90% share: name each one (names and English tech terms are allowed).
+      if (rule.part === "dialogue" && rule.script !== "latin") {
+        const hits = [...new Set((part.match(/\p{L}{2,}/gu) ?? []).filter((w) => FOREIGN_WORDS.has(w.toLowerCase())))];
+        if (hits.length) foreign.push({ num: u.num, words: hits });
+      }
     }
     const where = rule.part === "all" ? "text" : rule.part;
     if (bad.length) issues.push({ code: "script", items: sections.length ? bad : undefined, message: `The ${where} must be ${rule.language} written in ${rule.script} script; it isn't in ${sections.length ? `${noun} ${ranges(bad)}` : "the answer"}.` });
+    if (foreign.length) issues.push({ code: "foreign_words", items: sections.length ? foreign.map((f) => f.num) : undefined, message: `The ${rule.language} dialogue mixes in words from another language: ${foreign.map((f) => `${sections.length ? `${noun} ${f.num}` : "answer"}: "${f.words.join('", "')}"`).join("; ")}. Replace them with ${rule.language} words.` });
     // Checked per section so a later batch that drops the dialogue format is caught too.
     if (rule.part === "dialogue" && !rule.optional && noDialogue.length) issues.push({ code: "dialogue_missing", items: sections.length ? noDialogue : undefined, message: `No ${rule.language} dialogue (in quotes) was found in ${sections.length ? `${noun} ${ranges(noDialogue)}` : "the answer"}.` });
   }

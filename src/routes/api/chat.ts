@@ -174,7 +174,7 @@ export const Route = createFileRoute("/api/chat")({
                   await saveReply(caller.user.id, chatId, requestId, res.text, { executionMode: task.executionMode });
                   for (let i = 0; i < res.text.length; i += 400) ctrl.enqueue(sseChunk(res.text.slice(i, i + 400)));
                 } else if (res.status !== 499) {
-                  ctrl.enqueue(sseChunk(res.status === 429 ? "AI is busy right now. Please try again in a moment." : "Deep Thinking couldn't produce an answer right now — no result was generated. Please try again."));
+                  ctrl.enqueue(sseChunk(res.status === 429 ? "AI is busy right now. Please try again in a moment." : res.stages.includes("plan-failed") ? "Deep Thinking couldn't build a reliable story plan, so it stopped instead of writing an unplanned story. Please try again." : "Deep Thinking couldn't produce an answer right now — no result was generated. Please try again."));
                 }
               } catch (e) {
                 console.error("[chat:deep]", e);
