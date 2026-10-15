@@ -220,28 +220,38 @@ export const Route = createFileRoute("/api/chat")({
               const analysis = analyzeRequest(lastText);
               emit(lastHasMedia ? "analyzing_files" : analysis.items || analysis.complex ? "analyzing_requirements" : "understanding_request", analysis.items ? `${analysis.items.count} ${analysis.items.noun}${analysis.items.count === 1 ? "" : "s"} requested` : undefined);
               await runSearch((stage, msg) => emit(stage, msg));
-              const msgs = [{ role: "system", content: system }, ...messages];
-              let best: { text: string; issues: number } | null = null;
+              const { instructionAddendum } = await import("@/lib/ai/deep/instructions");
+              const rules = analysis.instructions ? instructionAddendum(analysis.instructions, analysis.items?.noun ?? null) : [];
+              if (analysis.items) rules.unshift(`Return exactly ${analysis.items.count} ${analysis.items.noun}s, each visibly numbered 1 to ${analysis.items.count} in order.`);
+              const msgs = [{ role: "system", content: rules.length ? `${system}\n\nMandatory requirements (checked automatically):\n${rules.map((r) => `- ${r}`).join("\n")}` : system }, ...messages];
+              let best: { text: string; issues: number; list: { message: string }[] } | null = null;
               let lastStatus = 502;
               let attempt = 0;
-              for (const t of models) {
+              // Bounded generate → validate → correct loop: each correction quotes the exact failed checks, models rotate,
+              // and an issue only counts as resolved when a later validation passes.
+              const { AI_LIMITS } = await import("@/lib/ai/limits");
+              const maxAttempts = Math.max(1, Math.min(5, (AI_LIMITS as any).defaultCorrections ?? 4) + 1);
+              let failuresInRow = 0;
+              while (attempt < maxAttempts && models.length && failuresInRow < models.length) {
+                const t = models[(attempt + failuresInRow) % models.length];
                 if (workSignal.aborted) { emit("cancelled"); return; }
-                if (attempt > 0) emit("retrying", `Trying ${t.label}`);
-                attempt++;
+                if (attempt > 0 || failuresInRow > 0) emit("retrying", `Trying ${t.label}`);
                 emit("reasoning");
-                const r = await streamFromProvider(t, best ? [...msgs, { role: "assistant", content: best.text }, { role: "user", content: "Your previous answer failed these checks; return the complete corrected answer only." }] : msgs, { maxTokens: deep ? 8192 : 4096, deep }, workSignal);
-                if (!r.ok) { lastStatus = r.status; if (r.status === 499) { emit("cancelled"); return; } console.error("[chat]", t.provider, t.model, r.status, r.reason); continue; }
+                const fix = best ? [...msgs, { role: "assistant", content: best.text }, { role: "user", content: `Your previous answer failed these automatic checks:\n${best.list.slice(0, 12).map((i) => `- ${i.message}`).join("\n")}\nFix ONLY these problems, keep every compliant part unchanged, and return the complete corrected answer with no commentary about the fix.` }] : msgs;
+                const r = await streamFromProvider(t, fix, { maxTokens: deep ? 8192 : 4096, deep }, workSignal);
+                if (!r.ok) { lastStatus = r.status; if (r.status === 499) { emit("cancelled"); return; } console.error("[chat]", t.provider, t.model, r.status, r.reason); failuresInRow++; continue; }
                 let c: { text: string; finishReason: string | null };
-                try { c = await collectStream(r.body); } catch (e: any) { if (workSignal.aborted) { emit("cancelled"); return; } console.error("[chat]", t.label, e?.message); continue; }
+                try { c = await collectStream(r.body); } catch (e: any) { if (workSignal.aborted) { emit("cancelled"); return; } console.error("[chat]", t.label, e?.message); failuresInRow++; continue; }
                 const text = c.text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
-                if (!text) { console.error("[chat]", t.provider, t.model, "empty answer"); continue; }
-                // Deterministic checks only (item count/sequence, completeness, tables, code, JSON) — no factual-accuracy claim.
+                if (!text) { console.error("[chat]", t.provider, t.model, "empty answer"); failuresInRow++; continue; }
+                failuresInRow = 0;
+                attempt++;
                 emit(analysis.items ? "checking_completeness" : "validating_requirements", analysis.items ? `Checking all ${analysis.items.count} ${analysis.items.noun}s are present` : undefined);
                 const issues = validateCandidate(text, analysis, c.finishReason);
-                if (!best || issues.length < best.issues) { best = { text, issues: issues.length }; usedModel = t.label; }
+                if (!best || issues.length <= best.issues) { best = { text, issues: issues.length, list: issues }; usedModel = t.label; }
                 if (!issues.length) break;
                 emit("detecting_issues", issues[0].message.slice(0, 120));
-                if (models.indexOf(t) < models.length - 1) emit("fixing_issues");
+                if (attempt < maxAttempts) emit("fixing_issues");
               }
               if (!best) {
                 emit("failed", lastStatus === 429 ? "AI is busy" : "No answer was produced");
@@ -279,7 +289,7 @@ export const Route = createFileRoute("/api/chat")({
                 console.log("[chat:factcheck]", JSON.stringify({ user: caller.user.id, taskId, rounds: fc.rounds, pagesRead: fc.pagesRead, pagesFailed: fc.pagesFailed, unchecked: fc.unchecked.length, corrected: fc.corrected, searchFailed: fc.searchFailed, claims: fc.records.map((r) => ({ id: r.id, status: r.status, sources: r.support.map((e) => e.url).slice(0, 3), conflicts: r.conflict.map((e) => e.url).slice(0, 3), at: r.checkedAt })) }));
               }
               emit("finalizing");
-              const answer = best.issues ? `${checkedText}\n\n> [!NOTE]\n> Verification note: some automatic checks on this answer could not be fully resolved.` : checkedText;
+              const answer = best.issues ? `${checkedText}\n\n> [!NOTE]\n> Verification note: after ${attempt} attempt${attempt === 1 ? "" : "s"} these checks still fail: ${best.list.slice(0, 3).map((i) => i.message).join(" ")}` : checkedText;
               await saveReply(caller.user.id, chatId, taskId, answer, { executionMode: task.executionMode, output: task.output });
               console.log("[chat:task]", JSON.stringify({ user: caller.user.id, taskId, model: usedModel, attempts: attempt, unresolved: best.issues, search: searchUsed }));
               const out = new ReadableStream<Uint8Array>({ start(c2) { for (let i = 0; i < answer.length; i += 400) c2.enqueue(sseChunk(answer.slice(i, i + 400))); c2.enqueue(sseDone()); c2.close(); } });
