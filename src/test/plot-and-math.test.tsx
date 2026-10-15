@@ -109,3 +109,28 @@ describe("maths rendering", () => {
     expect(container.querySelectorAll("li .katex-display").length).toBe(2);
   });
 });
+
+import { analyzeRequest } from "@/lib/ai/deep/analyze";
+import { validateCandidate, checkTables } from "@/lib/ai/deep/validators";
+import { needsFactCheck } from "@/lib/ai/factcheck";
+
+describe("calculation integrity (live mortgage/stats failures)", () => {
+  const req = "Calculate the monthly payment for a $200,000 loan at 6% annual interest over 30 years with monthly payments.";
+  it("rejects an answer that swaps the user's 6% for another rate", () => {
+    const a = analyzeRequest(req);
+    expect(a.inputs).toEqual(["6%", "200000"]);
+    const bad = "Principal \\$200,000. **Annual nominal interest rate r** 9.569 %. M = \\$1,692.00";
+    expect(validateCandidate(bad, a).some((i) => i.code === "inputs_changed")).toBe(true);
+    const good = "Principal $P = \\$200{,}000$, rate $r = 6\\%$, $i = 0.005$, $n = 360$. $M \\approx \\$1{,}199.10$";
+    expect(validateCandidate(good, a).filter((i) => i.code === "inputs_changed")).toEqual([]);
+  });
+  it("never web-fact-checks calculations on the user's own figures", () => {
+    expect(needsFactCheck(req, "x".repeat(2000) + " The monthly payment is $1,199.10 according to the amortization formula.")).toBe(false);
+    expect(needsFactCheck("For the data set 2, 4, 4 compute the mean", "The mean of the data set is 3.33 which is computed by summing.".repeat(20))).toBe(false);
+  });
+  it("does not flag repeated data rows (2, 4, 4, 4) as duplicates", () => {
+    const t = "| x | x − mean | (x − mean)² |\n|---|---|---|\n| 2 | -3 | 9 |\n| 4 | -1 | 1 |\n| 4 | -1 | 1 |\n| 4 | -1 | 1 |";
+    expect(checkTables(t)).toEqual([]);
+    expect(checkTables("| Name | Role |\n|---|---|\n| Ann | Dev |\n| Ann | Dev |")[0]?.code).toBe("table_duplicate");
+  });
+});
