@@ -21,16 +21,36 @@ export function usePinchZoom(ref: RefObject<HTMLElement | null>, get: () => numb
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // Let the browser scroll but never run its own pinch here, so our two-finger handler always gets the gesture.
+    el.style.touchAction = "pan-x pan-y";
     let pinch: { d: number; s: number } | null = null;
+    let gesture: number | null = null;
     const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    const start = (e: TouchEvent) => { if (e.touches.length === 2) pinch = { d: dist(e.touches), s: api.current.get() }; };
-    const move = (e: TouchEvent) => { if (e.touches.length === 2 && pinch && pinch.d > 0) { e.preventDefault(); api.current.set(pinch.s * (dist(e.touches) / pinch.d)); } };
-    const end = () => { pinch = null; };
+    const begin = (e: TouchEvent) => { if (e.touches.length >= 2) { const d = dist(e.touches); if (d > 0) pinch = { d, s: api.current.get() }; } };
+    const move = (e: TouchEvent) => {
+      if (e.touches.length < 2) return;
+      if (!pinch) begin(e);
+      if (!pinch) return;
+      if (e.cancelable) e.preventDefault();
+      api.current.set(pinch.s * (dist(e.touches) / pinch.d));
+    };
+    const end = (e: TouchEvent) => { if (e.touches.length < 2) pinch = null; };
+    // iOS Safari reports pinches as gesture events too; use them only when touch tracking isn't active.
+    const gStart = (e: Event) => { e.preventDefault(); gesture = api.current.get(); };
+    const gChange = (e: Event) => { e.preventDefault(); const scale = (e as Event & { scale?: number }).scale; if (!pinch && gesture != null && scale) api.current.set(gesture * scale); };
+    const gEnd = (e: Event) => { e.preventDefault(); gesture = null; };
     const wheel = (e: WheelEvent) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); api.current.set(api.current.get() + (e.deltaY < 0 ? wheelStep : -wheelStep)); } };
-    el.addEventListener("touchstart", start, { passive: true });
+    el.addEventListener("touchstart", begin, { passive: true });
     el.addEventListener("touchmove", move, { passive: false });
     el.addEventListener("touchend", end);
+    el.addEventListener("touchcancel", end);
+    el.addEventListener("gesturestart", gStart, { passive: false } as AddEventListenerOptions);
+    el.addEventListener("gesturechange", gChange, { passive: false } as AddEventListenerOptions);
+    el.addEventListener("gestureend", gEnd);
     el.addEventListener("wheel", wheel, { passive: false });
-    return () => { el.removeEventListener("touchstart", start); el.removeEventListener("touchmove", move); el.removeEventListener("touchend", end); el.removeEventListener("wheel", wheel); };
+    return () => {
+      el.removeEventListener("touchstart", begin); el.removeEventListener("touchmove", move); el.removeEventListener("touchend", end); el.removeEventListener("touchcancel", end);
+      el.removeEventListener("gesturestart", gStart); el.removeEventListener("gesturechange", gChange); el.removeEventListener("gestureend", gEnd); el.removeEventListener("wheel", wheel);
+    };
   });
 }

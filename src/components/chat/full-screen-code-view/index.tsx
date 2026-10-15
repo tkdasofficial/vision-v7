@@ -32,20 +32,7 @@ export default function FullScreenCodeView({ code, language, filename, previewHT
   const matches = useMemo(() => query ? code.split("\n").flatMap((line, index) => line.toLowerCase().includes(query.toLowerCase()) ? [index + 1] : []) : [], [code, query]);
   const activeLine = matches[matchIndex % (matches.length || 1)];
 
-  useEffect(() => {
-    const el = area.current;
-    if (!el) return;
-    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
-    const start = (e: TouchEvent) => { if (e.touches.length === 2) pinch.current = { d: dist(e.touches), s: size }; };
-    const move = (e: TouchEvent) => { if (e.touches.length === 2 && pinch.current && pinch.current.d > 0) { e.preventDefault(); setSize(clamp(Math.round(pinch.current.s * (dist(e.touches) / pinch.current.d)))); } };
-    const end = () => { pinch.current = null; };
-    const wheel = (e: WheelEvent) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); setSize((s) => clamp(s + (e.deltaY < 0 ? 1 : -1))); } };
-    el.addEventListener("touchstart", start, { passive: true });
-    el.addEventListener("touchmove", move, { passive: false });
-    el.addEventListener("touchend", end);
-    el.addEventListener("wheel", wheel, { passive: false });
-    return () => { el.removeEventListener("touchstart", start); el.removeEventListener("touchmove", move); el.removeEventListener("touchend", end); el.removeEventListener("wheel", wheel); };
-  }, [size, view]);
+  usePinchZoom(area, () => size, (value) => setSize(clamp(Math.round(value))), 1);
   useEffect(() => { area.current?.querySelector(`[data-code-line="${activeLine}"]`)?.scrollIntoView({ block: "center", inline: "nearest" }); }, [activeLine]);
   useEffect(() => { if (searchOpen) searchInput.current?.focus(); }, [searchOpen]);
   const moveMatch = (direction: number) => setMatchIndex((index) => (index + direction + matches.length) % (matches.length || 1));
