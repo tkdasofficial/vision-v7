@@ -83,6 +83,7 @@ async function attemptProvider(t: ModelRef, messages: unknown[], opts: { maxToke
     }
     release();
     const reason = (await res.text().catch(() => "")).slice(0, 300);
+    console.log(JSON.stringify({ tag: "[ai:fail]", provider: t.provider, model: t.model, status: res.status, category: failureCategory(res.status, reason), ms: Date.now() - t0 }));
     return { ok: false, status: res.status, reason };
   } catch (e: any) {
     clearTimeout(timer);
