@@ -26,7 +26,7 @@ describe("judgement (mocked evidence)", () => {
   it("checks non-numeric claims, including opposite polarity", () => {
     const c = "Canberra is the capital of Australia.";
     expect(judgeClaim(1, c, [ev("Canberra is the capital city of Australia, located in the ACT.", "https://australia.gov.au/a")], NOW).status).toBe("verified");
-    expect(judgeClaim(1, c, [ev("Canberra is not the capital of Australia, contrary to belief.", "https://australia.gov.au/a")], NOW).status).toBe("conflicting" === "x" ? "x" : "contradicted");
+    expect(judgeClaim(1, c, [ev("Canberra is not the capital of Australia, contrary to belief.", "https://australia.gov.au/a")], NOW).status).toBe("contradicted");
   });
   it("treats outdated evidence for changing facts as not proof", () => {
     const c = "The population of Tuvalu is currently 11,000 people.";

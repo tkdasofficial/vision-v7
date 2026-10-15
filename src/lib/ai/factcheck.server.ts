@@ -52,7 +52,7 @@ export function claimCheckStore(exec: Exec, userId: string) {
         [crypto.randomUUID(), userId, conversationId ?? null, messageId, JSON.stringify(records).slice(0, 200_000), JSON.stringify(summary), Date.now()],
       );
     },
-    async get(messageId: string): Promise<{ records: ClaimRecord[]; summary: Record<string, unknown>; conversationId: string | null } | null> {
+    async get(messageId: string): Promise<{ records: ClaimRecord[]; summary: Record<string, number | boolean>; conversationId: string | null } | null> {
       await ensure();
       const row = (await exec("SELECT records, summary, conversation_id FROM claim_checks WHERE user_id = ? AND message_id = ? LIMIT 1", [userId, messageId]))[0];
       return row ? { records: JSON.parse(row.records), summary: JSON.parse(row.summary), conversationId: row.conversation_id } : null;
