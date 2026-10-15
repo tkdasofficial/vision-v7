@@ -9,9 +9,10 @@ export type ChatMsg = { role: "system" | "user" | "assistant"; content: unknown 
 export type CallResult = { ok: true; text: string; finishReason: string | null } | { ok: false; status: number; reason: string };
 export type ModelCall = (messages: ChatMsg[]) => Promise<CallResult>;
 
-/** Resource limits. Counts are batch sizes and caps on work per request, never assumptions about how many items exist.
- *  batchItems: sections per generation/correction call; reviewWindowChars: text per review call; maxReviewWindows: review calls per pass. */
-export const DEEP_LIMITS = { maxCorrections: 2, maxContinuations: 3, budgetMs: 150_000, batchItems: 20, reviewWindowChars: 24_000, maxReviewWindows: 6 };
+/** Resource limits. budgetMs covers every batch plus review/correction of the largest supported request (work is detached from the browser, see chat-background).
+ *  Resource limits. Counts are batch sizes and caps on work per request, never assumptions about how many items exist.
+ *  batchItems: sections per generation/correction call (keeps each under the 8k-token output cap); batchThreshold: requests up to this many sections are written in one call; reviewWindowChars: text per review call; maxReviewWindows: review calls per pass. */
+export const DEEP_LIMITS = { maxCorrections: 2, maxContinuations: 3, budgetMs: 600_000, batchItems: 6, batchConcurrency: 4, batchThreshold: 12, reviewWindowChars: 24_000, maxReviewWindows: 6 };
 
 export type DeepResult =
   | { ok: true; text: string; remaining: Issue[]; corrections: number; continuations: number; stages: string[] }
@@ -83,10 +84,14 @@ export async function runDeepPipeline(opts: {
   let messages = opts.messages;
 
   // 0. Hidden plan: analyze the task and outline the solution; never shown to the user.
+  // Batched answers are written in parallel parts, so the plan must fix every part's events and object/character
+  // state up front; each part follows it instead of guessing what the parts it cannot see contain.
+  const willBatch = !!opts.analysis.items && opts.analysis.items.count > Math.max(L.batchItems, L.batchThreshold);
+  const outlineAsk = willBatch ? ` Then give a numbered outline with exactly one line per ${opts.analysis.items!.noun} (1 to ${opts.analysis.items!.count}): its event, location, and the state at its end of every key object (who holds it, where it is, used up or not), every character (position, damage, shut down or active) and every accessory. Each line must follow causally from the previous one.` : "";
   if (opts.plan && request) {
     stages.push("plan"); prog("planning");
     const p = await opts.call([
-      { role: "system", content: "Analyze the user's request before anyone answers it. Output a concise internal plan: the exact task, required format/length/counts, constraints, sub-problems in order, facts or calculations to double-check, and likely pitfalls. Do not write the answer." },
+      { role: "system", content: "Analyze the user's request before anyone answers it. Output a concise internal plan: the exact task, required format/length/counts, constraints, sub-problems in order, facts or calculations to double-check, and likely pitfalls. Do not write the answer." + outlineAsk },
       { role: "user", content: clip(request, 20000) },
     ]);
     if (p.ok && p.text.trim()) {
@@ -110,19 +115,39 @@ export async function runDeepPipeline(opts: {
   stages.push("generate"); prog("generating");
   let text = "", finish: string | null = "stop", continuations = 0;
   let pending: number[] = [];
-  if (noun && count > L.batchItems) {
+  if (noun && count > Math.max(L.batchItems, L.batchThreshold)) {
     stages.push("batched");
-    for (let a = 1; a <= count; a += L.batchItems) {
-      const b = Math.min(count, a + L.batchItems - 1);
-      if (overBudget()) { pending.push(...Array.from({ length: count - a + 1 }, (_, k) => a + k)); break; }
-      const want = Array.from({ length: b - a + 1 }, (_, k) => a + k);
-      const ctx = text ? `\n\nAlready written (continuity reference — keep characters, clothing, terms and format identical):\n${contextFor(text, a)}` : "";
-      const r = await opts.call([...messages, { role: "user", content: `This answer has ${count} ${noun}s in total and is written in parts. Write ONLY ${label} ${a} to ${label} ${b}, labelled "${label} N", following every requirement above. No intro or closing remarks.${ctx}` }]);
-      if (!r.ok) { if (!text) return { ok: false, status: r.status, reason: r.reason, stages }; pending.push(...Array.from({ length: count - a + 1 }, (_, k) => a + k)); break; }
+    // Batches stay under one call's output limit. The first batch is written alone (it introduces characters,
+    // objects and format); later batches run batchConcurrency at a time against it plus the hidden plan, so
+    // long requests finish in time. Whole-answer validation and the plot checker catch any seams afterwards.
+    const groups: number[][] = [];
+    for (let a = 1; a <= count; a += L.batchItems) groups.push(Array.from({ length: Math.min(count, a + L.batchItems - 1) - a + 1 }, (_, k) => a + k));
+    const runGroup = (want: number[], base: string) => {
+      const a = want[0], b = want[want.length - 1];
+      const ctx = base ? `\n\nAlready written (continuity reference — keep characters, clothing, objects, terms and format identical):\n${contextFor(base, a)}` : "";
+      const follow = willBatch && opts.plan ? `\nFollow the internal plan's outline lines for ${label} ${Math.max(1, a - 1)} to ${b} exactly: ${label} ${a} starts from the end state of ${label} ${a - 1 || 1}, and object possession and character state must match the outline.` : "";
+      return opts.call([...messages, { role: "user", content: `This answer has ${count} ${noun}s in total and is written in parts. Write ONLY ${label} ${a} to ${label} ${b}, labelled "${label} N", following every requirement above. No intro or closing remarks.${follow}${ctx}` }]);
+    };
+    const take = (want: number[], r: CallResult) => {
+      if (!r.ok) return false;
       const got = splitSections(r.text, noun).sections.map((x) => x.num).filter((n) => want.includes(n));
       // Explicit completion check per batch: sections the batch skipped stay pending for correction.
       text = got.length ? (spliceSections(text, r.text, noun, got) ?? text) : text;
       if (r.finishReason === "length") stages.push("batch-truncated");
+      return true;
+    };
+    const first = await runGroup(groups[0], "");
+    if (!first.ok) return { ok: false, status: first.status, reason: first.reason, stages };
+    take(groups[0], first);
+    for (let g = 1; g < groups.length; g += L.batchConcurrency) {
+      const wave = groups.slice(g, g + L.batchConcurrency);
+      if (overBudget()) { pending.push(...groups.slice(g).flat()); break; }
+      const base = text;
+      const res = await Promise.all(wave.map((w) => runGroup(w, base)));
+      const failed: number[][] = [];
+      res.forEach((r, k) => { if (!take(wave[k], r)) failed.push(wave[k]); });
+      // One sequential retry per failed part before it is left to the correction loop.
+      for (const w of failed) { if (overBudget() || !take(w, await runGroup(w, text))) pending.push(...w); }
     }
     if (!text) text = "";
   } else {

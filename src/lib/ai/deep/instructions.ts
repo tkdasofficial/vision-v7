@@ -3,7 +3,7 @@
 
 export type Script = "latin" | "devanagari" | "bengali" | "arabic" | "cyrillic" | "cjk";
 export type WordRange = { min: number | null; max: number | null; per: "item" | "total" };
-export type ScriptRule = { part: "dialogue" | "description" | "all"; script: Script; language: string };
+export type ScriptRule = { part: "dialogue" | "description" | "all"; script: Script; language: string; /** "where appropriate": parts without dialogue are fine. */ optional?: boolean };
 export type Instructions = {
   words: WordRange | null;
   maxChars: number | null;
@@ -54,7 +54,7 @@ export function parseInstructions(text: string): Instructions {
   const reB = new RegExp(`\\b(dialog(?:ue)?s?|speech|descriptions?|narration|prose)\\s+(?:must be |should be |are |is |written )?in\\s+(${langs})\\b(?:\\s*(?:\\(|in |using )\\s*(\\w+))?`, "gi");
   const add = (lang: string, part: ScriptRule["part"], scriptWord?: string) => {
     const script = (scriptWord && LANG_SCRIPT[scriptWord.toLowerCase()]) || LANG_SCRIPT[lang.toLowerCase()];
-    if (script && !scripts.some((s) => s.part === part)) scripts.push({ part, script, language: lang.toLowerCase() });
+    if (script && !scripts.some((s) => s.part === part)) scripts.push({ part, script, language: lang.toLowerCase(), ...(part === "dialogue" && /\b(?:where|when|if)\s+(?:appropriate|needed|relevant|necessary|applicable)\b/i.test(t) ? { optional: true } : {}) });
   };
   for (const m of t.matchAll(reA)) add(m[1], partOf(m[3]), m[4] ?? m[2]);
   for (const m of t.matchAll(reB)) add(m[2], partOf(m[1]), m[3]);
@@ -116,8 +116,30 @@ export function splitSections(text: string, noun: string): { preamble: string; s
 /** Dialogue = quoted text, or text after a "Dialogue:" / "Name:" speaker label. Everything else is description. */
 export function splitDialogue(body: string): { dialogue: string; description: string } {
   const dialogue: string[] = [];
-  let rest = body.replace(/[“"«]([^”"»\n]+)[”"»]/g, (_, q) => { dialogue.push(q); return " "; });
-  rest = rest.replace(/^\s*(?:[-*]\s*)?(?:\*\*)?(?:dialog(?:ue)?|speech|[\p{Lu}][\p{L}]{1,20})(?:\*\*)?\s*(?:\([^)]*\))?\s*:\s*(.+)$/gimu, (all, line) => {
+  // A quoted title in a heading line ("### Scene 1: \"Mission Briefing\"", "Title: \"…\"") is not dialogue.
+  const titled = body.replace(/^\s*(?:#{1,6}\s.*|(?:\*\*)?(?:title|[\p{L}]+\s+\d{1,4})(?:\*\*)?\s*[:.—–-].*)$/gimu, (l) => l.replace(/[“"«][^”"»\n]*[”"»]/g, " ")).replace(/^\s*[:.—–-]?\s*(?:\*\*)?[“"«][^”"»\n]*[”"»]/, " ");
+  // With an explicit dialogue field, quotes elsewhere (signs, on-screen text in the visual prompt) are description.
+  const field = /^[ \t]*(?:[-*][ \t]*)?(?:\*\*)?(?:[\p{L}]+[ \t]+)?dialog(?:ue)?s?(?:\*\*)?[ \t]*:/imu.exec(titled);
+  const onlyIn = (seg: string) => seg.replace(/[“"«]([^”"»\n]+)[”"»]/g, (_, q) => { dialogue.push(q); return " "; });
+  let rest: string;
+  if (field) {
+    const after = titled.slice(field.index);
+    const stop = /\n[ \t]*(?:[-*][ \t]*)?(?:\*\*)?(?:continuity|camera|lighting|environment|visual|duration|actions?|clothing|title|notes?|transition|location|sound|music|scene)\b[^:\n]{0,40}:/i.exec(after);
+    const seg = stop ? after.slice(0, stop.index) : after;
+    rest = titled.slice(0, field.index) + onlyIn(seg) + (stop ? after.slice(stop.index) : "");
+  } else rest = onlyIn(titled);
+  // When quoted lines exist they ARE the dialogue: "Camera:", "Bolt:" etc. are then field/speaker labels, and
+  // a parenthesised translation after the quote is not dialogue either.
+  const quoted = dialogue.length > 0;
+  // An explicit "Dialogue:" field means the other "Word:" lines are fields, not speakers.
+  const fielded = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:[\p{L}]+\s+)?dialog(?:ue)?(?:\*\*)?\s*:/imu.test(titled);
+  rest = rest.replace(/^\s*(?:[-*]\s*)?(?:\*\*)?(?:(?:[\p{L}]+\s+)?dialog(?:ue)?|speech|[\p{Lu}][\p{L}]{1,20})(?:\*\*)?\s*(?:\([^)]*\))?\s*:\s*(.+)$/gimu, (all, line: string) => {
+    if (quoted) return all;
+    if (fielded && !/^\s*(?:[-*]\s*)?(?:\*\*)?(?:[\p{L}]+\s+)?(?:dialog(?:ue)?|speech)\b/iu.test(all)) return all;
+    // "Dialogue: None" / "Dialogue: —" means the part has no dialogue.
+    if (/^\s*(?:[-*]\s*)?(?:\*\*)?(?:[\p{L}]+\s+)?(?:dialog(?:ue)?|speech)\b/iu.test(all) && /^\s*(?:none|n\/a|no dialogue|silence|silent|—|-)\s*\.?\s*(?:\([^)]*\))?\s*\.?\s*$/i.test(line)) return " ";
+    // Unquoted dialogue line: drop parenthesised translations and a trailing "— spoken by X" attribution.
+    line = line.replace(/\([^)]*\)/g, " ").replace(/\s[—–-]\s*(?:spoken|said|says|whispered|by)\b.*$/i, " ");
     if (/^(?:description|narration|setting|action|duration|scene|note)\b/i.test(all.trim())) return all;
     dialogue.push(line); return " ";
   });
@@ -172,7 +194,7 @@ export function checkInstructions(text: string, ins: Instructions, noun: string 
     const where = rule.part === "all" ? "text" : rule.part;
     if (bad.length) issues.push({ code: "script", items: sections.length ? bad : undefined, message: `The ${where} must be ${rule.language} written in ${rule.script} script; it isn't in ${sections.length ? `${noun} ${ranges(bad)}` : "the answer"}.` });
     // Checked per section so a later batch that drops the dialogue format is caught too.
-    if (rule.part === "dialogue" && noDialogue.length) issues.push({ code: "dialogue_missing", items: sections.length ? noDialogue : undefined, message: `No ${rule.language} dialogue (in quotes) was found in ${sections.length ? `${noun} ${ranges(noDialogue)}` : "the answer"}.` });
+    if (rule.part === "dialogue" && !rule.optional && noDialogue.length) issues.push({ code: "dialogue_missing", items: sections.length ? noDialogue : undefined, message: `No ${rule.language} dialogue (in quotes) was found in ${sections.length ? `${noun} ${ranges(noDialogue)}` : "the answer"}.` });
   }
 
   if (ins.requiredNames?.length) {

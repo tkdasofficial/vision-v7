@@ -87,7 +87,7 @@ describe("Deep Thinking Mode", () => {
     await runDeepPipeline({ messages: [], analysis: analyzeRequest("Write 3 ideas"), call });
     expect(call).toHaveBeenCalledTimes(3); // 1 generate + max 2 corrections
     let t = 0;
-    const call2 = vi.fn(async () => { t += 200_000; return ok("1. a", "length"); });
+    const call2 = vi.fn(async () => { t += 700_000; return ok("1. a", "length"); });
     await runDeepPipeline({ messages: [], analysis: analyzeRequest("Write 3 ideas"), call: call2, now: () => t });
     expect(call2).toHaveBeenCalledTimes(1);
   });
