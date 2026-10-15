@@ -26,3 +26,4 @@
 - Offline caching uses vite-plugin-pwa (generateSW, client build only) registered solely from `src/lib/pwa.ts`, which refuses dev, iframes, preview hosts and `?sw=off`; pages are network-first and sign-in/admin/API paths are never cached; saved chats mirror to IndexedDB (`src/lib/idb-cache.ts`) and are cleared on sign-out. Why: fast repeats, no stale code or cached private data.
 
 - Workspace pages share fade/grid controls; Settings uses Radix switches/radios. Drafts pass URL context to addChat; ProjectChatHeader uses ProjectMenu; lists sort by creation with pins first. Why: consistent UI and isolated chats.
+- Chat replies run detached from the browser request (Worker waitUntil, never request.signal) and the server saves the finished answer into chat_messages under the client reply id with INSERT OR IGNORE; a reopened chat whose last message is an unanswered question polls for it. Why: leaving or reloading never loses an answer.
