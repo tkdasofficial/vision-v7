@@ -1,11 +1,28 @@
 // Provider-specific request details (endpoint, key, options). Server-only; keys never leave here.
+// Priority is NVIDIA → Groq → Cloudflare Workers AI (see TEXT_CHAIN). Keys come from process.env or the
+// Cloudflare Worker env bindings (NVIDIA_API_KEY, GROQ_API_KEY), read by getSecret.
 import type { ModelRef } from "./models.server";
+import { getSecret } from "./runtime-env.server";
 
-function endpoint(t: ModelRef): { url: string; key?: string } {
-  if (t.provider === "groq") return { url: "https://api.groq.com/openai/v1/chat/completions", key: process.env["GROQ_API_KEY"] };
-  if (t.provider === "nvidia") return { url: "https://integrate.api.nvidia.com/v1/chat/completions", key: process.env["NVIDIA_API_KEY"] };
-  const account = process.env["CLOUDFLARE_ACCOUNT_ID"];
-  return { url: `https://api.cloudflare.com/client/v4/accounts/${account}/ai/v1/chat/completions`, key: account ? process.env["CLOUDFLARE_API_TOKEN"] : undefined };
+export function endpoint(t: ModelRef): { url: string; key?: string } {
+  if (t.provider === "groq") return { url: "https://api.groq.com/openai/v1/chat/completions", key: getSecret("GROQ_API_KEY") };
+  if (t.provider === "nvidia") return { url: "https://integrate.api.nvidia.com/v1/chat/completions", key: getSecret("NVIDIA_API_KEY") };
+  const account = getSecret("CLOUDFLARE_ACCOUNT_ID");
+  return { url: `https://api.cloudflare.com/client/v4/accounts/${account}/ai/v1/chat/completions`, key: account ? getSecret("CLOUDFLARE_API_TOKEN") : undefined };
+}
+
+/** Safe category for diagnostics; never includes the provider body. */
+export function failureCategory(status: number, reason: string): string {
+  if (/not configured/.test(reason)) return "missing_binding";
+  if (status === 401 || status === 403) return "auth";
+  if (status === 429 && /quota|credit|exhaust|daily|neurons|insufficient/i.test(reason)) return "quota";
+  if (status === 429) return "rate_limit";
+  if (status === 499) return "cancelled";
+  if (status === 504 || status === 408) return "timeout";
+  if (status === 404 && /model/i.test(reason)) return "invalid_model";
+  if (status === 400 || status === 404 || status === 422) return "invalid_request";
+  if (status >= 500) return "outage";
+  return "unknown";
 }
 
 export type ProviderResult = { ok: true; body: ReadableStream<Uint8Array> } | { ok: false; status: number; reason: string };
@@ -66,6 +83,7 @@ async function attemptProvider(t: ModelRef, messages: unknown[], opts: { maxToke
     }
     release();
     const reason = (await res.text().catch(() => "")).slice(0, 300);
+    console.log(JSON.stringify({ tag: "[ai:fail]", provider: t.provider, model: t.model, status: res.status, category: failureCategory(res.status, reason), ms: Date.now() - t0 }));
     return { ok: false, status: res.status, reason };
   } catch (e: any) {
     clearTimeout(timer);
