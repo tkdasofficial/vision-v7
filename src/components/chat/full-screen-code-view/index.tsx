@@ -8,7 +8,7 @@ import { useCopy } from "@/components/chat/use-copy";
 import CodeSource from "@/components/chat/code-source";
 import PreviewPane from "@/components/chat/preview-pane";
 import { cn } from "@/lib/utils";
-import { ZoomControls } from "@/components/chat/zoom-controls";
+import { ZoomControls, usePinchZoom } from "@/components/chat/zoom-controls";
 import { codeLanguageLabel } from "@/lib/code-language-label";
 
 type Props = { code: string; language?: string; filename?: string; html?: string; previewHTML?: string; iframeRef?: Ref<HTMLIFrameElement>; initialView?: "code" | "preview" | "split"; copyText?: string; copyHtml?: () => string | undefined; onClose: () => void };
@@ -27,7 +27,6 @@ export default function FullScreenCodeView({ code, language, filename, previewHT
   const [view, setView] = useState(initialView);
   const area = useRef<HTMLDivElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
-  const pinch = useRef<{ d: number; s: number } | null>(null);
   const preview = previewHTML ?? (["html", "htm", "svg"].includes(language ?? "") ? code : undefined);
   const matches = useMemo(() => query ? code.split("\n").flatMap((line, index) => line.toLowerCase().includes(query.toLowerCase()) ? [index + 1] : []) : [], [code, query]);
   const activeLine = matches[matchIndex % (matches.length || 1)];
