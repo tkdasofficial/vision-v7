@@ -238,7 +238,7 @@ export const Route = createFileRoute("/api/chat")({
                 const { fetchPageText, claimCheckStore } = await import("@/lib/ai/factcheck.server");
                 const fc = await runFactCheck(best.text, {
                   emit,
-                  search: async (q) => { const s = await webSearch(q, { signal: request.signal }); return { ok: s.status !== "failed", results: s.results.slice(0, 5) }; },
+                  search: async (q) => { const s = await webSearch(q, { signal: request.signal }); return { ok: s.status !== "failed", results: s.results.slice(0, 8) }; },
                   fetchPage: (u) => fetchPageText(u, request.signal),
                   correct: async (text, problems) => {
                     const evidence = problems.map((p) => `Claim ${p.id}: "${p.claim}"\nConflicting evidence:\n${p.conflict.slice(0, 3).map((e) => `- ${e.title} (${e.url}): ${e.passage.slice(0, 400)}`).join("\n")}`).join("\n\n");
