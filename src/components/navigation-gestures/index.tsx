@@ -21,6 +21,8 @@ function scrollsX(start: Element | null, dx: number) {
   }
   return false;
 }
+/** A pull-down only counts when it starts on the page header (or the top strip where it floats). */
+const fromHeader = (target: Element, y: number) => !!target.closest("header, .drawer-top, [data-gesture-header]") || y <= 88;
 /** True when the touched content can still scroll up, so a pull-down there means "scroll", not "search". */
 function scrollsUp(start: Element | null) {
   for (let node = start; node && node !== document.body; node = node.parentElement) {
@@ -214,7 +216,7 @@ export default function NavigationGestures() {
         // Chat, Projects and drawer pages: swipe from anywhere, except horizontally scrolling content.
         stopMotion();
         target.current = event.target;
-        drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, time: performance.now(), start: 0, velocity: 0, kind: "pending", active: false };
+        drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, time: performance.now(), start: 0, velocity: 0, kind: "pending", active: false, header: fromHeader(event.target, event.clientY) };
         return;
       }
       if (!drawer && !edge && event.target.closest("button, a, [role=button], pre, table, [role=tablist]")) return;
@@ -225,7 +227,7 @@ export default function NavigationGestures() {
       }
       if (!drawer && !edge && !current.current.router.history.canGoBack()) return;
       stopMotion();
-      drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, time: performance.now(), start: current.current.directDrawer ? 1 : opened.current ? progress.current : 0, velocity: 0, kind: drawer || edge ? "drawer" : "back", active: false };
+      drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, time: performance.now(), start: current.current.directDrawer ? 1 : opened.current ? progress.current : 0, velocity: 0, kind: drawer || edge ? "drawer" : "back", active: false, header: fromHeader(event.target, event.clientY) };
     };
     const move = (event: TouchPoint) => {
       const gesture = drag.current;
