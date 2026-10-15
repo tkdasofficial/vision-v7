@@ -71,3 +71,10 @@ describe("live 25-scene run: 'Hindi Dialogue:' field with translation", () => {
     expect(issues.find((i) => i.code === "script")?.items).toEqual([1]);
   });
 });
+describe("live 25-scene run: quoted sign text in the visual prompt", () => {
+  it("ignores English quotes outside the dialogue field (seen live: “STORM ALERT”)", () => {
+    const ins = __pi("Hindi dialogue where appropriate");
+    const txt = `Scene 1\nVisual Prompt: A screen reads “STORM ALERT” and “ENERGY CORE MISSING”.\nCamera: Pan.\nHindi Dialogue:\nBolt: “कोर कहाँ गायब हो गया?”\nContinuity: Opening.\n`;
+    expect(__ci(txt, ins, "scene").filter((i) => i.code === "script")).toEqual([]);
+  });
+});

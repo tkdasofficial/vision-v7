@@ -118,7 +118,16 @@ export function splitDialogue(body: string): { dialogue: string; description: st
   const dialogue: string[] = [];
   // A quoted title in a heading line ("### Scene 1: \"Mission Briefing\"", "Title: \"…\"") is not dialogue.
   const titled = body.replace(/^\s*(?:#{1,6}\s.*|(?:\*\*)?(?:title|[\p{L}]+\s+\d{1,4})(?:\*\*)?\s*[:.—–-].*)$/gimu, (l) => l.replace(/[“"«][^”"»\n]*[”"»]/g, " ")).replace(/^\s*[:.—–-]?\s*(?:\*\*)?[“"«][^”"»\n]*[”"»]/, " ");
-  let rest = titled.replace(/[“"«]([^”"»\n]+)[”"»]/g, (_, q) => { dialogue.push(q); return " "; });
+  // With an explicit dialogue field, quotes elsewhere (signs, on-screen text in the visual prompt) are description.
+  const field = /^[ \t]*(?:[-*][ \t]*)?(?:\*\*)?(?:[\p{L}]+[ \t]+)?dialog(?:ue)?s?(?:\*\*)?[ \t]*:/imu.exec(titled);
+  const onlyIn = (seg: string) => seg.replace(/[“"«]([^”"»\n]+)[”"»]/g, (_, q) => { dialogue.push(q); return " "; });
+  let rest: string;
+  if (field) {
+    const after = titled.slice(field.index);
+    const stop = /\n[ \t]*(?:[-*][ \t]*)?(?:\*\*)?(?:continuity|camera|lighting|environment|visual|duration|actions?|clothing|title|notes?|transition|location|sound|music|scene)\b[^:\n]{0,40}:/i.exec(after);
+    const seg = stop ? after.slice(0, stop.index) : after;
+    rest = titled.slice(0, field.index) + onlyIn(seg) + (stop ? after.slice(stop.index) : "");
+  } else rest = onlyIn(titled);
   // When quoted lines exist they ARE the dialogue: "Camera:", "Bolt:" etc. are then field/speaker labels, and
   // a parenthesised translation after the quote is not dialogue either.
   const quoted = dialogue.length > 0;
