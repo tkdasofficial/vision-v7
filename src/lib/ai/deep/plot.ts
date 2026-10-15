@@ -62,6 +62,9 @@ export function checkCameraDirection(scenes: Scene[]): Issue[] {
 
 const DISABLED = /\b(powers?\s+down|powered\s+down|shuts?\s+down|shut\s+down|goes\s+dark|went\s+dark|loses?\s+power|lost\s+power|battery\s+(?:dies|died|is\s+dead)|falls?\s+unconscious|knocked\s+(?:out|unconscious)|collapses?\s+(?:lifeless|motionless)|is\s+(?:trapped|captured|caged|chained|frozen\s+solid)|offline)\b/i;
 const RECOVER = /\b(reboot|restart|wak(?:e|es|ing)|woke|powers?\s+(?:back\s+)?(?:on|up)|comes?\s+back\s+online|back\s+online|regain|recover|reviv|recharg|repair|restor|freed|frees|escap|rescu|breaks?\s+free|flicker(?:s|ing)?\s+(?:back\s+)?(?:on|to\s+life)|jolt(?:s|ed)?\s+(?:back\s+)?(?:awake|to\s+life)|spark(?:s|ed)?\s+(?:back\s+)?to\s+life|eyes\s+(?:glow|light)\s+(?:again|back))/i;
+const CONTINUITY_LINE = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:continuity|previous)\b/i;
+// A sentinel/drone/guard shutting down is not the hero shutting down.
+const OTHER_ACTOR = /\b(sentinel|drone|guard|enemy|villain|rival|thief|turret|bot\b|robots?\s+(?:guard|sentry)|security)\b/i;
 const ACTIVE = /\b(runs?|sprints?|climbs?|jumps?|leaps?|fights?|walks?|flies|grabs?|races?|dashes|charges|speaks?|says|shouts)\b/i;
 const LIMB = /\b(?:loses|lost|severs?|severed|rips?\s+off|torn\s+off|crushes|crushed|breaks|broke|snaps|snapped)\s+(?:his|her|its|their|the\s+robot's|\w+'s)\s+((?:left|right)\s+)?(arm|leg|hand|antenna|eye)\b/gi;
 
@@ -92,7 +95,8 @@ export function checkCharacterState(scenes: Scene[]): Issue[] {
   const issues: Issue[] = [];
   for (let i = 0; i + 1 < scenes.length; i++) {
     const a = scenes[i], b = scenes[i + 1];
-    const lastSentences = sentences(a.body).slice(-3).join(" ");
+    const own = (body: string) => sentences(body.split("\n").filter((l) => !CONTINUITY_LINE.test(l)).join("\n")).filter((x) => !(OTHER_ACTOR.test(x) && !/\b(he|she|him|bolt)\b/i.test(x)));
+    const lastSentences = own(a.body).slice(-3).join(" ");
     if (DISABLED.test(lastSentences) && !RECOVER.test(lastSentences) && !RECOVER.test(b.body) && ACTIVE.test(b.body)) {
       issues.push({ code: "plot_character_state", items: [a.num, b.num], message: `Scene ${a.num} ends with the character disabled ("${DISABLED.exec(lastSentences)![0]}"), but scene ${b.num} has them acting with no recovery shown. Add the recovery (reboot, rescue, escape…) at the start of scene ${b.num}.` });
     }
@@ -128,10 +132,66 @@ export function checkTransitions(scenes: Scene[]): Issue[] {
   return issues;
 }
 
+// Chronological object-state tracking: each key object has a state (held by the hero, stored/locked, left behind,
+// taken by someone else) updated sentence by sentence; every change is attributed to the scene that makes it.
+type ObjState = { kind: "held" | "stored" | "left" | "other"; at: number; where?: string };
+const ACQUIRE = /\b(retriev|recover|reclaim|grab|snatch(?:es|ed|ing)?(?!\s+(?:it|the\s+\w+(?:\s+\w+)?)\s+(?:away\s+)?from\s+(?:him|her|bolt))|seiz|secur(?:es|ed|ing)|collect|pick(?:s|ed|ing)?\s+(?:it\s+)?up|lift(?:s|ed|ing)?\s+(?:it\s+)?(?:out|free|from)|pull(?:s|ed|ing)?\s+(?:it\s+)?(?:free|out|loose)|pry|pries|pried|wrench|extract|takes?\s+(?:back\s+)?(?:the|it)|took|catch(?:es)?|caught|unlock(?:s|ed)?[^.\n]{0,40}\b(?:and|then)\s+(?:takes?|grabs?|removes?)|remov(?:es|ed|ing)\s+(?:the|it)[^.\n]{0,30}\bfrom)/i;
+const STORE = /\b(lock(?:s|ed|ing)?\s+(?:it\s+|the\s+[\w-]+(?:\s+[\w-]+)?\s+)?(?:away|inside|in|into)|seal(?:s|ed|ing)?\s+(?:it\s+)?(?:inside|in|into|away)|(?:is|remains|stays|sits|rests)\s+(?:locked|sealed|stored)|stor(?:es|ed|ing)\s|stash|plac(?:es|ed|ing)\s+(?:it|the\s+[\w-]+(?:\s+[\w-]+)?)\s+(?:back\s+)?(?:in|into|inside|on)\s+(?:the|a)\s+(vault|safe|case|pedestal|cradle|reactor|socket|chamber|container|pod|slot|console)|insert(?:s|ed|ing)?|install(?:s|ed|ing)?|slot(?:s|ted|ting)\s)/i;
+const LEAVE = /\b(drop(?:s|ped|ping)?|leav(?:es|ing)\s+(?:it|the\s+[\w-]+(?:\s+[\w-]+)?)\s+behind|left\s+behind|abandon|los(?:es|ing)\s+(?:his\s+)?grip|knock(?:s|ed)?\s+(?:it\s+|the\s+[\w-]+(?:\s+[\w-]+)?\s+)?(?:out\s+of|from)|slips?\s+from|falls?\s+from\s+(?:his|her|its|bolt's))/i;
+const OTHER = /\b(stol(?:e|en)|snatch(?:es|ed)?\s+(?:it|the\s+[\w-]+(?:\s+[\w-]+)?)\s+(?:away\s+)?from\s+(?:him|her|bolt)|hands?\s+(?:it|the\s+[\w-]+(?:\s+[\w-]+)?)\s+(?:over\s+)?to|gives?\s+(?:it|the\s+[\w-]+(?:\s+[\w-]+)?)\s+to|confiscat)/i;
+const HOLD = /\b(hold(?:s|ing)?|held|clutch|cradl|carr(?:y|ies|ying|ied)|grip(?:s|ping)?|in\s+(?:his|her|its|bolt's)\s+(?:hand|hands|grip|arms|palm|claw|fist)|strapped\s+to|(?:on|across)\s+(?:his|her|its|bolt's)\s+back|in\s+(?:his|her|its|bolt's)\s+(?:backpack|pack|chest\s+compartment|compartment|pouch|case)|raises?|lifts?\s+(?:it|the)|tucked|hug)/i;
+const RETRIEVE = /\b(retriev|recover|reclaim|snatch|seiz|pick(?:s|ed|ing)?\s+(?:it\s+)?up|pry|pries|pried|wrench|extract|grab)/i;
+// "removes the core from his belt field" / "takes it out of his pack": a move within the hero's own possession.
+const OWN_CONTAINER = /\b(?:from|out\s+of|off)\s+(?:his|her|its|their|bolt's)\b/i;
+// Possession needs a person in the sentence ("Shields Holding, Core Stable" in a title is not someone holding it).
+const HERO = /\b(he|she|his|her|him|bolt|bolt's|hands?|grip|arms)\b/i;
+const MENTION_STATE = /\b(vault|safe|case|pedestal|cradle|reactor|socket|chamber|container|pod|stand|console|slot)\b/i;
+
+/** Tracks every key object scene by scene and reports double retrievals, reappearances without a transition,
+ *  and an object held while it is still locked away or with someone else. */
+export function checkObjectStates(scenes: Scene[]): Issue[] {
+  const issues: Issue[] = [];
+  const objRe = new RegExp(`\\b(?:the|its|his|her|their|a|an)\\s+(${OBJ})\\b`, "gi");
+  const keys = new Map<string, number>();
+  for (const sc of scenes) for (const m of sc.body.matchAll(objRe)) { const k = head(m[1]).split(" ").pop()!; keys.set(k, (keys.get(k) ?? 0) + 1); }
+  for (const [obj, n] of keys) {
+    if (n < 3) continue;
+    const word = obj.split(" ").pop()!;
+    const re = new RegExp(`\\b${word}s?\\b`, "i");
+    let st: ObjState | null = null;
+    let reported = false;
+    for (const sc of scenes) {
+      if (reported) break;
+      // "Continuity:" lines restate the previous scene; they don't change state.
+      const lines = sc.body.split("\n").filter((l) => !/^\s*(?:[-*]\s*)?(?:\*\*)?(?:continuity|previous|hindi\s+dialogue|dialogue)\b/i.test(l)).join("\n");
+      let acquiredHere = false, releasedHere = false;
+      for (const s of sentences(lines)) {
+        if (!re.test(s)) continue;
+        if (OTHER.test(s)) { st = { kind: "other", at: sc.num }; releasedHere = true; continue; }
+        if (STORE.test(s) && !ACQUIRE.test(s)) { st = { kind: "stored", at: sc.num, where: MENTION_STATE.exec(s)?.[1] }; releasedHere = true; continue; }
+        if (LEAVE.test(s) && !ACQUIRE.test(s)) { st = { kind: "left", at: sc.num }; releasedHere = true; continue; }
+        if (ACQUIRE.test(s)) {
+          if (st?.kind === "held" && st.at < sc.num && !releasedHere && RETRIEVE.test(s) && !OWN_CONTAINER.test(s)) {
+            issues.push({ code: "plot_object_state", items: [st.at, sc.num], message: `Scene ${sc.num} has the ${obj} retrieved again, but it was already recovered in scene ${st.at} and never lost, dropped, stored or taken in between. Either show how it was lost after scene ${st.at}, or make scene ${sc.num} continue with the ${obj} already in hand; then re-check scenes ${st.at}–${sc.num + 1}.` });
+            reported = true; break;
+          }
+          st = { kind: "held", at: sc.num }; acquiredHere = true; continue;
+        }
+        if (HOLD.test(s) && HERO.test(s) && st && st.kind !== "held" && !acquiredHere && st.at < sc.num) {
+          const was = st.kind === "stored" ? `locked/stored${st.where ? ` in the ${st.where}` : ""}` : st.kind === "left" ? "left behind" : "with someone else";
+          issues.push({ code: "plot_object_state", items: [st.at, sc.num], message: `Scene ${sc.num} shows the ${obj} in the character's possession, but since scene ${st.at} it is ${was} and no scene shows it being recovered. Add the retrieval on screen (at the end of scene ${sc.num - 1} or the start of scene ${sc.num}) or keep it where it was; then re-check scenes ${st.at}–${sc.num + 1}.` });
+          reported = true; break;
+        }
+      }
+    }
+  }
+  return issues;
+}
+
 /** Runs every whole-story check across all scenes together. Needs at least three scenes. */
 export function checkPlot(text: string, noun: string | null): Issue[] {
   const body = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/^```[^\n]*\n?|```$/g, ""));
   const scenes = splitItems(body, noun ?? "scene");
   if (scenes.length < 3) return [];
-  return [...checkObjectReuse(scenes), ...checkWornItems(scenes), ...checkCameraDirection(scenes), ...checkCharacterState(scenes), ...checkTransitions(scenes)];
+  return [...checkObjectReuse(scenes), ...checkObjectStates(scenes), ...checkWornItems(scenes), ...checkCameraDirection(scenes), ...checkCharacterState(scenes), ...checkTransitions(scenes)];
 }

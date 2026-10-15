@@ -75,7 +75,7 @@ describe("targeted correction", () => {
     const call = vi.fn().mockResolvedValueOnce(ok(bad)).mockResolvedValueOnce(ok(scene(5)));
     const r = await runDeepPipeline({ messages: [{ role: "user", content: REQ }], analysis: a, call });
     expect(r.ok && r.text).toBe(story());
-    expect(r.ok && r.stages).toEqual(["generate", "validate", "correct", "correct-sections", "revalidate"]);
+    expect(r.ok && r.stages).toEqual(["generate", "validate", "plot-check", "correct", "correct-sections", "revalidate"]);
     expect(String(call.mock.calls[1][0].at(-1).content)).toMatch(/ONLY scene 5/);
   });
   it("stops after the retry limit and discloses unmet requirements", async () => {
