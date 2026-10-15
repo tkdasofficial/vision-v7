@@ -119,7 +119,7 @@ export function splitDialogue(body: string): { dialogue: string; description: st
   // A quoted title in a heading line ("### Scene 1: \"Mission Briefing\"", "Title: \"…\"") is not dialogue.
   const titled = body.replace(/^\s*(?:#{1,6}\s.*|(?:\*\*)?(?:title|[\p{L}]+\s+\d{1,4})(?:\*\*)?\s*[:.—–-].*)$/gimu, (l) => l.replace(/[“"«][^”"»\n]*[”"»]/g, " ")).replace(/^\s*[:.—–-]?\s*(?:\*\*)?[“"«][^”"»\n]*[”"»]/, " ");
   // With an explicit dialogue field, quotes elsewhere (signs, on-screen text in the visual prompt) are description.
-  const field = /^[ \t]*(?:[-*][ \t]*)?(?:\*\*)?(?:[\p{L}]+[ \t]+)?dialog(?:ue)?s?(?:\*\*)?[ \t]*:/imu.exec(titled);
+  const field = /^[ \t]*(?:[-*][ \t]*)?(?:\*\*)?(?:[\p{L}]+[ \t]+)?dialog(?:ue)?s?(?:\*\*)?[ \t]*(?:\([^)\n]*\))?[ \t]*(?:\*\*)?[ \t]*:/imu.exec(titled);
   const onlyIn = (seg: string) => seg.replace(/[“"«]([^”"»\n]+)[”"»]/g, (_, q) => { dialogue.push(q); return " "; });
   let rest: string;
   if (field) {
@@ -132,7 +132,7 @@ export function splitDialogue(body: string): { dialogue: string; description: st
   // a parenthesised translation after the quote is not dialogue either.
   const quoted = dialogue.length > 0;
   // An explicit "Dialogue:" field means the other "Word:" lines are fields, not speakers.
-  const fielded = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:[\p{L}]+\s+)?dialog(?:ue)?(?:\*\*)?\s*:/imu.test(titled);
+  const fielded = /^\s*(?:[-*]\s*)?(?:\*\*)?(?:[\p{L}]+\s+)?dialog(?:ue)?s?(?:\*\*)?\s*(?:\([^)\n]*\))?\s*(?:\*\*)?\s*:/imu.test(titled);
   rest = rest.replace(/^\s*(?:[-*]\s*)?(?:\*\*)?(?:(?:[\p{L}]+\s+)?dialog(?:ue)?|speech|[\p{Lu}][\p{L}]{1,20})(?:\*\*)?\s*(?:\([^)]*\))?\s*:\s*(.+)$/gimu, (all, line: string) => {
     if (quoted) return all;
     if (fielded && !/^\s*(?:[-*]\s*)?(?:\*\*)?(?:[\p{L}]+\s+)?(?:dialog(?:ue)?|speech)\b/iu.test(all)) return all;

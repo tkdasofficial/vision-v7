@@ -148,3 +148,16 @@ describe("6. false continuity warnings from 10-scene live attempt 2", () => {
     expect(i.find((x) => x.code === "plot_character_state")?.items).toEqual([2, 3]);
   });
 });
+
+describe("7. false Hindi warning from 10-scene live attempt 3", () => {
+  const live = readFileSync(join(__dirname, "fixtures/bolt-10-live3.md"), "utf8");
+  const ins = parseInstructions("10 scenes. English visual prompts. Hindi dialogue in Devanagari where appropriate.");
+  it("a 'Dialogue (Hindi):' field keeps HUD text like “Core Secured” out of the dialogue", () => {
+    expect(checkInstructions(live, ins, "scene").filter((i) => /script|foreign|dialogue/.test(i.code))).toEqual([]);
+  });
+  it("still flags English inside that field", () => {
+    const bad = live.replace('"कोर सुरक्षित"', '"Core is safe now, let us go"');
+    expect(checkInstructions(bad, ins, "scene").find((i) => i.code === "script")?.items).toEqual([4]);
+  });
+  it("the attempt-3 story passes the whole-story checks", () => expect(checkPlot(live, "scene")).toEqual([]));
+});
