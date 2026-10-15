@@ -27,5 +27,3 @@
 
 - Workspace pages share fade/grid controls; Settings uses Radix switches/radios. Drafts pass URL context to addChat; ProjectChatHeader uses ProjectMenu; lists sort by creation with pins first. Why: consistent UI and isolated chats.
 - Chat replies run detached from the browser request (Worker waitUntil, never request.signal) and the server saves the finished answer into chat_messages under the client reply id with INSERT OR IGNORE; a reopened chat whose last message is an unanswered question polls for it. Why: leaving or reloading never loses an answer.
-- Chat maths renders through remark-math + KaTeX after `normalizeMath` (`src/lib/math.ts`) converts \( \)/\[ \]/math fences and escapes currency; code is never touched. Why: models emit mixed delimiters and dollar amounts.
-- Multi-scene outputs are validated as a whole by `src/lib/ai/deep/plot.ts` (object reuse, worn items, camera vs motion, character state, location transitions) inside `validateCandidate`; calculation requests keep the user's figures (`checkInputs`) and skip web fact-checking. Why: per-scene checks missed cross-scene contradictions, and web pages "corrected" correct maths.
