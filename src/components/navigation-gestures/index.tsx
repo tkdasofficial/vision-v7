@@ -233,7 +233,7 @@ export default function NavigationGestures() {
       const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
       if (!gesture.active) {
         // Accidental-touch guard: a resting thumb or tiny drift never commits to a gesture.
-        if (Math.max(Math.abs(dx), Math.abs(dy)) < 10) return;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < (Math.abs(dx) >= Math.abs(dy) * 2 ? 6 : 10)) return;
         // The touched Projects view owns pull-down search, even while layered over Chat.
         if (dy > 0 && dy >= Math.abs(dx) * 1.2 && !scrollsUp(event.target instanceof Element ? event.target : target.current)) {
           // Pull-down search needs a deliberate pull, not a brush at the top of the page.
