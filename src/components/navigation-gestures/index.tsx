@@ -234,10 +234,12 @@ export default function NavigationGestures() {
       if (!gesture.active) {
         // Accidental-touch guard: a resting thumb or tiny drift never commits to a gesture.
         if (Math.max(Math.abs(dx), Math.abs(dy)) < (Math.abs(dx) >= Math.abs(dy) * 2 ? 6 : 10)) return;
-        // The touched Projects view owns pull-down search, even while layered over Chat.
-        if (dy > 0 && dy >= Math.abs(dx) * 1.2 && !scrollsUp(event.target instanceof Element ? event.target : target.current)) {
-          // Pull-down search needs a deliberate pull, not a brush at the top of the page.
+        // Downward moves that don't start in the header are always plain scrolling — never a gesture.
+        if (dy > 0 && dy >= Math.abs(dx) * 1.2 && !gesture.header) { if (gesture.kind === "pending") { drag.current = null; return; } }
+        // Pull-down search: only a quick downward swipe that starts on the header (never a slow scroll-drag).
+        else if (dy > 0 && dy >= Math.abs(dx) * 1.2 && !scrollsUp(event.target instanceof Element ? event.target : target.current)) {
           if (dy < 36) return;
+          if (dy / Math.max(1, performance.now() - gesture.time) < 0.25) { drag.current = null; return; }
           if (target.current?.closest("[data-projects-search]")) {
             drag.current = null;
             if (requestProjectsSearch(target.current)) { event.preventDefault(); suppressClick.current = true; }
