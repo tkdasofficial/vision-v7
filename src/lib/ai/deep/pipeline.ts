@@ -68,6 +68,8 @@ export async function runDeepPipeline(opts: {
   plan?: boolean;
   /** Run the independent model review loop after deterministic checks. */
   review?: boolean;
+  /** Fallback model chain used for the last correction round when output still fails validation. */
+  fallbackCall?: ModelCall;
   /** Truthful progress events reflecting the stage actually running. */
   progress?: (stage: "analyzing" | "planning" | "generating" | "verifying" | "correcting" | "assembling") => void;
 }): Promise<DeepResult> {
@@ -188,6 +190,8 @@ export async function runDeepPipeline(opts: {
   while (issues.some((i) => i.code !== "truncated") && corrections < L.maxCorrections && !overBudget()) {
     corrections++;
     stages.push("correct"); prog("correcting");
+    // Final correction round switches to the fallback model when the primary keeps failing validation.
+    const fix = corrections === L.maxCorrections && opts.fallbackCall ? (stages.push("fallback-model"), opts.fallbackCall) : opts.call;
     // Targeted: when every problem is local to labelled sections, rewrite only those (in batches) and splice them back.
     const labelled = noun ? splitSections(text, noun).sections.length > 0 : false;
     const targets = noun && labelled && issues.every((i) => i.items?.length) ? [...new Set(issues.flatMap((i) => i.items!))].sort((x, y) => x - y) : null;

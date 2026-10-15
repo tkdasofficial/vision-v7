@@ -17,15 +17,11 @@ export const MODELS = {
   cfCoder: { provider: "cf", model: "@cf/qwen/qwen2.5-coder-32b-instruct", label: "Qwen2.5-Coder 32B (Cloudflare)" },
 } satisfies Record<string, ModelRef>;
 
+/** Text generation chain: Nemotron 3 Super primary, GPT-OSS 120B (Groq, then Cloudflare) as fallback. */
+export const TEXT_CHAIN: ModelRef[] = [MODELS.nemotronSuper, MODELS.groq120b, MODELS.cf120b];
+
 // Ordered candidates: first is preferred, the rest are tried only if it fails. At most 3 per request.
 export function candidatesFor(c: TaskClassification): ModelRef[] {
-  const m = MODELS;
-  if (c.requiresMultimodalProcessing) return [m.nemotronOmni, m.cfVision];
-  switch (c.executionMode) {
-    case "deep": return [m.groq120b, m.nemotronSuper, m.cf120b];
-    case "research": return [m.groq120b, m.nemotronSuper, m.cfQwen3];
-    case "coding": return [m.cfCoder, m.groq120b, m.cf120b];
-    default:
-      return c.taskType === "light" ? [m.groq20b, m.cf20b, m.nemotronSuper] : [m.nemotronSuper, m.groq20b, m.cf20b];
-  }
+  if (c.requiresMultimodalProcessing) return [MODELS.nemotronOmni, MODELS.cfVision];
+  return TEXT_CHAIN;
 }
