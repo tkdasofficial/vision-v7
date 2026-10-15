@@ -9,7 +9,7 @@ import { isMotionReduced } from "@/lib/app-motion";
 import { classifyRoute, safeReturnPath } from "@/lib/route-access";
 import { DRAWER_EVENT, GLIDE_EASE, PROJECTS_EVENT, drawerProgress, glideDuration, gestureSurface, requestProjectsSearch, requestSearch, settleDrawer, springStep, swipeAction } from "@/lib/navigation-motion";
 
-type Drag = { id: number; x: number; y: number; lastX: number; time: number; start: number; velocity: number; kind: "drawer" | "back" | "pending" | "projects" | "to-chat" | "to-drawer"; active: boolean };
+type Drag = { id: number; x: number; y: number; lastX: number; time: number; start: number; velocity: number; kind: "drawer" | "back" | "pending" | "projects" | "to-chat" | "to-drawer"; active: boolean; header?: boolean };
 
 // Memoized so starting a swipe (which re-renders this component) never re-renders the chat list.
 const DrawerView = memo(AppDrawerView);
@@ -21,6 +21,8 @@ function scrollsX(start: Element | null, dx: number) {
   }
   return false;
 }
+/** A pull-down only counts when it starts on the page header (or the top strip where it floats). */
+const fromHeader = (target: Element, y: number) => !!target.closest("header, .drawer-top, [data-gesture-header]") || y <= 88;
 /** True when the touched content can still scroll up, so a pull-down there means "scroll", not "search". */
 function scrollsUp(start: Element | null) {
   for (let node = start; node && node !== document.body; node = node.parentElement) {
@@ -214,7 +216,7 @@ export default function NavigationGestures() {
         // Chat, Projects and drawer pages: swipe from anywhere, except horizontally scrolling content.
         stopMotion();
         target.current = event.target;
-        drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, time: performance.now(), start: 0, velocity: 0, kind: "pending", active: false };
+        drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, time: performance.now(), start: 0, velocity: 0, kind: "pending", active: false, header: fromHeader(event.target, event.clientY) };
         return;
       }
       if (!drawer && !edge && event.target.closest("button, a, [role=button], pre, table, [role=tablist]")) return;
@@ -225,7 +227,7 @@ export default function NavigationGestures() {
       }
       if (!drawer && !edge && !current.current.router.history.canGoBack()) return;
       stopMotion();
-      drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, time: performance.now(), start: current.current.directDrawer ? 1 : opened.current ? progress.current : 0, velocity: 0, kind: drawer || edge ? "drawer" : "back", active: false };
+      drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY, lastX: event.clientX, time: performance.now(), start: current.current.directDrawer ? 1 : opened.current ? progress.current : 0, velocity: 0, kind: drawer || edge ? "drawer" : "back", active: false, header: fromHeader(event.target, event.clientY) };
     };
     const move = (event: TouchPoint) => {
       const gesture = drag.current;
@@ -234,10 +236,12 @@ export default function NavigationGestures() {
       if (!gesture.active) {
         // Accidental-touch guard: a resting thumb or tiny drift never commits to a gesture.
         if (Math.max(Math.abs(dx), Math.abs(dy)) < (Math.abs(dx) >= Math.abs(dy) * 2 ? 6 : 10)) return;
-        // The touched Projects view owns pull-down search, even while layered over Chat.
-        if (dy > 0 && dy >= Math.abs(dx) * 1.2 && !scrollsUp(event.target instanceof Element ? event.target : target.current)) {
-          // Pull-down search needs a deliberate pull, not a brush at the top of the page.
+        // Downward moves that don't start in the header are always plain scrolling — never a gesture.
+        if (dy > 0 && dy >= Math.abs(dx) * 1.2 && !gesture.header) { if (gesture.kind === "pending") { drag.current = null; return; } }
+        // Pull-down search: only a quick downward swipe that starts on the header (never a slow scroll-drag).
+        else if (dy > 0 && dy >= Math.abs(dx) * 1.2 && !scrollsUp(event.target instanceof Element ? event.target : target.current)) {
           if (dy < 36) return;
+          if (dy / Math.max(1, performance.now() - gesture.time) < 0.25) { drag.current = null; return; }
           if (target.current?.closest("[data-projects-search]")) {
             drag.current = null;
             if (requestProjectsSearch(target.current)) { event.preventDefault(); suppressClick.current = true; }
