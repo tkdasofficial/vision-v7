@@ -9,7 +9,7 @@ import { isMotionReduced } from "@/lib/app-motion";
 import { classifyRoute, safeReturnPath } from "@/lib/route-access";
 import { DRAWER_EVENT, GLIDE_EASE, PROJECTS_EVENT, drawerProgress, glideDuration, gestureSurface, requestProjectsSearch, requestSearch, settleDrawer, springStep, swipeAction } from "@/lib/navigation-motion";
 
-type Drag = { id: number; x: number; y: number; lastX: number; time: number; start: number; velocity: number; kind: "drawer" | "back" | "pending" | "projects" | "to-chat" | "to-drawer"; active: boolean };
+type Drag = { id: number; x: number; y: number; lastX: number; time: number; start: number; velocity: number; kind: "drawer" | "back" | "pending" | "projects" | "to-chat" | "to-drawer"; active: boolean; header?: boolean };
 
 // Memoized so starting a swipe (which re-renders this component) never re-renders the chat list.
 const DrawerView = memo(AppDrawerView);
