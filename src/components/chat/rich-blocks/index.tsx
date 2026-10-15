@@ -17,22 +17,51 @@ const CALLOUTS: Record<CalloutType, { label: string; Icon: typeof Info; tone: st
 
 type MdNode = { type: string; value?: string; children?: MdNode[]; data?: Record<string, unknown> };
 
-/** remark plugin: turns GitHub-style "> [!NOTE]" blockquotes into callouts and strips the marker. */
+const MARKER = /^\s*\[!(note|tip|important|warning|caution)\]\s*:?\s*\n?/i;
+
+/** Strips a leading [!TYPE] marker from a paragraph (plain or **bold**); returns the type or null. */
+function takeMarker(para: MdNode | undefined): string | null {
+  if (para?.type !== "paragraph" || !para.children?.length) return null;
+  let first = para.children[0];
+  const wrapped = (first.type === "strong" || first.type === "emphasis") && first.children?.[0]?.type === "text" ? first : null;
+  const text = wrapped ? wrapped.children![0] : first;
+  if (text.type !== "text") return null;
+  const m = text.value?.match(MARKER);
+  if (!m) return null;
+  text.value = text.value!.slice(m[0].length);
+  if (!text.value) { (wrapped ?? para).children!.shift(); if (wrapped && !wrapped.children!.length) para.children!.shift(); }
+  first = para.children[0];
+  if (first?.type === "break") para.children.shift();
+  else if (first?.type === "text") first.value = first.value!.replace(/^\s+/, "");
+  return m[1].toLowerCase();
+}
+
+/** remark plugin: turns "> [!NOTE]" blockquotes — and bare "[!NOTE]" paragraphs, a common model slip —
+ *  into callouts and strips the marker so raw directive text never reaches the screen. */
 export function remarkCallouts() {
   return (tree: MdNode) => {
     const walk = (node: MdNode) => {
       if (node.type === "blockquote") {
-        const para = node.children?.[0];
-        const text = para?.type === "paragraph" ? para.children?.[0] : undefined;
-        const m = text?.type === "text" ? text.value?.match(/^\s*\[!(note|tip|important|warning|caution)\]\s*\n?/i) : null;
-        if (m && text && para) {
-          text.value = text.value!.slice(m[0].length);
-          if (!text.value) para.children!.shift();
-          if (!para.children!.length) node.children!.shift();
-          node.data = { ...node.data, hProperties: { "data-callout": m[1].toLowerCase() } };
+        const type = takeMarker(node.children?.[0]);
+        if (type) {
+          if (!node.children![0].children!.length) node.children!.shift();
+          node.data = { ...node.data, hProperties: { "data-callout": type } };
         }
       }
-      node.children?.forEach(walk);
+      node.children?.forEach((child, i) => {
+        if (node.type !== "blockquote" && child.type === "paragraph") {
+          const type = takeMarker(child);
+          if (type) {
+            const kids: MdNode[] = child.children!.length ? [child] : [];
+            // A bare marker on its own paragraph adopts the following paragraph as its body.
+            const next = node.children![i + 1];
+            if (!kids.length && next?.type === "paragraph") { kids.push(next); node.children!.splice(i + 1, 1); }
+            node.children![i] = { type: "blockquote", children: kids, data: { hProperties: { "data-callout": type } } };
+            return;
+          }
+        }
+        walk(child);
+      });
     };
     walk(tree);
   };
