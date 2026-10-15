@@ -30,7 +30,7 @@ const components: Components = {
   },
   code: ({ children, className }) => <code className={className}>{children}</code>,
   blockquote: ({ children, node }) => {
-    const type = String(node?.properties?.dataCallout ?? "") as CalloutType;
+    const type = String(node?.properties?.dataCallout ?? (node?.properties as any)?.["data-callout"] ?? "") as CalloutType;
     return CALLOUT_TYPES.includes(type) ? <Callout type={type}>{children}</Callout> : <blockquote>{children}</blockquote>;
   },
   a: ({ children, href }) => {
