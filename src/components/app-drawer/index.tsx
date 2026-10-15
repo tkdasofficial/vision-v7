@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+
+// Runs before paint in the browser so a search opening never flashes the drawer first.
+const useBeforePaint = typeof window === "undefined" ? useEffect : useLayoutEffect;
 import { Check, MessageSquare, Pencil, Pin, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChatHistory } from "@/context/ChatHistoryContext";
@@ -52,7 +55,7 @@ export default function AppDrawerView({ onClose, onNewChat, onSelectChat, active
   const [editValue, setEditValue] = useState("");
   // The drawer is kept between openings: each close (resetKey) or pull-down Search request starts it fresh.
   const firstRun = useRef(true);
-  useEffect(() => {
+  useBeforePaint(() => {
     if (firstRun.current) { firstRun.current = false; return; }
     if (morphTimer.current) clearTimeout(morphTimer.current);
     setMorphing(false); setScrolled(false); setEditingId(null);
