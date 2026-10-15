@@ -34,13 +34,19 @@ export function needsFactCheck(request: string, answer: string): boolean {
   return allClaims(answer).length > 0;
 }
 
+/** Headings/labels ("Blood Path (Numbered List)") are not statements: short, unpunctuated, mostly capitalised. */
+function isTitle(s: string): boolean {
+  const w = s.split(" ");
+  return !/[.!;]$/.test(s) && w.length <= 8 && w.filter((x) => /^[A-Z(]/.test(x)).length >= Math.ceil(w.length * 0.6);
+}
+
 /** Every material, verifiable statement in the answer, ordered by importance/risk (most important first). */
 export function allClaims(answer: string): string[] {
-  const prose = answer.replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ").replace(/^\s*>\s*\[![A-Z]+\][\s\S]*$/m, " ");
+  const prose = answer.replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ").replace(/^\s*>\s*\[![A-Z]+\][\s\S]*$/m, " ").replace(/^\s{0,3}#{1,6}\s.*$/gm, " ");
   const sentences = prose
     .split(/\n+|(?<=[.!?])\s+(?=[A-Z])/)
     .map((s) => s.replace(/^[\s>*#|\-\d.)]+/, "").replace(/[*_|]+/g, " ").replace(/\s+/g, " ").trim())
-    .filter((s) => s.length >= 20 && s.length <= 400 && !/\?$/.test(s) && !NOT_FACT.test(s));
+    .filter((s) => s.length >= 20 && s.length <= 400 && !/\?$/.test(s) && !NOT_FACT.test(s) && !isTitle(s));
   const scored = sentences
     .map((s, i) => {
       const n = numbers(s).length, k = keyTerms(s).length, shape = FACT_SHAPE.test(s);
