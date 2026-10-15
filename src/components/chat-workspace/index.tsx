@@ -140,6 +140,32 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
     }
   }, [bgTasks, isIncognito]);
 
+  // Reply still being finished on the server (page was left or reloaded mid-answer): show typing and
+  // poll the saved chat until the background worker stores the answer (up to 15 minutes after the question).
+  useEffect(() => {
+    if (isIncognito || !chatId || !initialMessages?.length) return;
+    const last = initialMessages[initialMessages.length - 1];
+    const sentAt = new Date(last.timestamp as any).getTime();
+    if (last.role !== "user" || !sentAt || Date.now() - sentAt > 15 * 60_000) return;
+    let stop = false;
+    setIsTyping(true);
+    const tick = async () => {
+      if (stop) return;
+      const { data } = await supabase.from("chat_messages").select("*").eq("session_id", chatId).eq("role", "assistant").gt("created_at", new Date(sentAt - 1000).toISOString()).order("created_at", { ascending: true }).limit(1);
+      const row: any = data?.[0];
+      if (row && !stop) {
+        stop = true; setIsTyping(false);
+        setMessages((prev) => prev.some((m) => m.id === row.id) ? prev : [...prev, { id: row.id, role: "assistant", content: row.content || "", timestamp: new Date(row.created_at), toolId: row.metadata?.toolId }]);
+        setNewMessageIds((prev) => new Set(prev).add(row.id));
+        return;
+      }
+      if (Date.now() - sentAt > 15 * 60_000) { stop = true; setIsTyping(false); return; }
+      timer = window.setTimeout(tick, 4000);
+    };
+    let timer = window.setTimeout(tick, 500);
+    return () => { stop = true; clearTimeout(timer); };
+  }, [chatId, initialMessages, isIncognito]);
+
   // Set title from initial messages when loading an existing chat
   useEffect(() => {
     if (initialMessages && initialMessages.length > 0 && !chatTitle) {
