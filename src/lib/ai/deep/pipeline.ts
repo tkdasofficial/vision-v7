@@ -133,7 +133,7 @@ export async function runDeepPipeline(opts: {
     while (finish === "length" && continuations < L.maxContinuations && !overBudget()) {
       continuations++;
       stages.push("continue");
-      const r = await opts.call([...messages, { role: "assistant", content: clip(text, 40000) },
+      const r = await fix([...messages, { role: "assistant", content: clip(text, 40000) },
         { role: "user", content: "Continue exactly where you stopped. Do not repeat anything already written and keep the same numbering and format." }]);
       if (!r.ok) break;
       text += r.text;
@@ -202,7 +202,7 @@ export async function runDeepPipeline(opts: {
       for (let k = 0; k < targets.length && !overBudget(); k += L.batchItems) {
         const group = targets.slice(k, k + L.batchItems);
         const related = issues.filter((i) => i.items!.some((n) => group.includes(n))).map((i) => i.message);
-        const r = await opts.call([...messages, { role: "assistant", content: clip(work, 40000) },
+        const r = await fix([...messages, { role: "assistant", content: clip(work, 40000) },
           { role: "user", content: `Automatic verification found these problems:\n- ${related.join("\n- ")}\nRewrite ONLY ${noun} ${ranges(group)} to fix them (write any missing ones), keeping the same labels ("${label} N"), characters and story. Output only those ${noun}s, nothing else.${contextFor(work, group[0]) ? `\n\nContinuity reference:\n${contextFor(work, group[0])}` : ""}` }]);
         if (!r.ok) break;
         const next = spliceSections(work, r.text, noun, group);
@@ -211,7 +211,7 @@ export async function runDeepPipeline(opts: {
       if (any) candidate = work;
     }
     if (candidate == null) {
-      const r = await opts.call([...messages, { role: "assistant", content: clip(text, 40000) },
+      const r = await fix([...messages, { role: "assistant", content: clip(text, 40000) },
         { role: "user", content: `Automatic verification found these problems in your answer:\n- ${issues.map((i) => i.message).join("\n- ")}\nReturn the complete corrected answer only (not a diff, no commentary about the correction). Keep everything that was already correct.` }]);
       if (!r.ok) break;
       candidate = r.text; candFinish = r.finishReason;

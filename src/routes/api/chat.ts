@@ -146,7 +146,7 @@ export const Route = createFileRoute("/api/chat")({
                   return;
                 }
                 progress("analyzing");
-                const res = await runDeepPipeline({ messages: fullMessages as any, analysis: deepAnalysis!, call, request: lastText, plan: deepAnalysis!.complex || lastText.length > 400, review: true, progress });
+                const res = await runDeepPipeline({ messages: fullMessages as any, analysis: deepAnalysis!, call, fallbackCall: reviewCall, request: lastText, plan: deepAnalysis!.complex || lastText.length > 400, review: true, progress });
                 console.log("[chat:deep]", JSON.stringify({ user: caller.user.id, model: usedModel, ok: res.ok, stages: res.stages, corrections: res.ok ? res.corrections : 0, remaining: res.ok ? res.remaining.length : null, ms: Date.now() - t0 }));
                 if (res.ok) {
                   for (let i = 0; i < res.text.length; i += 400) ctrl.enqueue(sseChunk(res.text.slice(i, i + 400)));
