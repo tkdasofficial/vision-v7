@@ -68,6 +68,8 @@ export async function runDeepPipeline(opts: {
   plan?: boolean;
   /** Run the independent model review loop after deterministic checks. */
   review?: boolean;
+  /** Fallback model chain used for the last correction round when output still fails validation. */
+  fallbackCall?: ModelCall;
   /** Truthful progress events reflecting the stage actually running. */
   progress?: (stage: "analyzing" | "planning" | "generating" | "verifying" | "correcting" | "assembling") => void;
 }): Promise<DeepResult> {
@@ -188,6 +190,8 @@ export async function runDeepPipeline(opts: {
   while (issues.some((i) => i.code !== "truncated") && corrections < L.maxCorrections && !overBudget()) {
     corrections++;
     stages.push("correct"); prog("correcting");
+    // Final correction round switches to the fallback model when the primary keeps failing validation.
+    const fix = corrections === L.maxCorrections && opts.fallbackCall ? (stages.push("fallback-model"), opts.fallbackCall) : opts.call;
     // Targeted: when every problem is local to labelled sections, rewrite only those (in batches) and splice them back.
     const labelled = noun ? splitSections(text, noun).sections.length > 0 : false;
     const targets = noun && labelled && issues.every((i) => i.items?.length) ? [...new Set(issues.flatMap((i) => i.items!))].sort((x, y) => x - y) : null;
@@ -198,7 +202,7 @@ export async function runDeepPipeline(opts: {
       for (let k = 0; k < targets.length && !overBudget(); k += L.batchItems) {
         const group = targets.slice(k, k + L.batchItems);
         const related = issues.filter((i) => i.items!.some((n) => group.includes(n))).map((i) => i.message);
-        const r = await opts.call([...messages, { role: "assistant", content: clip(work, 40000) },
+        const r = await fix([...messages, { role: "assistant", content: clip(work, 40000) },
           { role: "user", content: `Automatic verification found these problems:\n- ${related.join("\n- ")}\nRewrite ONLY ${noun} ${ranges(group)} to fix them (write any missing ones), keeping the same labels ("${label} N"), characters and story. Output only those ${noun}s, nothing else.${contextFor(work, group[0]) ? `\n\nContinuity reference:\n${contextFor(work, group[0])}` : ""}` }]);
         if (!r.ok) break;
         const next = spliceSections(work, r.text, noun, group);
@@ -207,7 +211,7 @@ export async function runDeepPipeline(opts: {
       if (any) candidate = work;
     }
     if (candidate == null) {
-      const r = await opts.call([...messages, { role: "assistant", content: clip(text, 40000) },
+      const r = await fix([...messages, { role: "assistant", content: clip(text, 40000) },
         { role: "user", content: `Automatic verification found these problems in your answer:\n- ${issues.map((i) => i.message).join("\n- ")}\nReturn the complete corrected answer only (not a diff, no commentary about the correction). Keep everything that was already correct.` }]);
       if (!r.ok) break;
       candidate = r.text; candFinish = r.finishReason;

@@ -40,3 +40,4 @@
 - [x] Drawer pages close to Chat (no reopening recent page); Projects as swipe/tap panel from the right
 - [x] Projects page background uses the app's black (#080808) instead of gray; browser check confirms the computed color matches the app background
 - [x] App Drawer follows a swipe 1:1 with no delay (kept ready off-screen)
+- [x] Universal output accuracy: Nemotron primary + GPT-OSS 120B fallback (also on failed validation), accuracy benchmark; 1041 tests pass.
