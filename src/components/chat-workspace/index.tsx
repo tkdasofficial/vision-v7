@@ -316,9 +316,9 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
     }
 
     // Transition from "thinking" to the detected work phase after a delay
-    const phaseTimer = window.setTimeout(() => {
-      setThinkingPhase(phase);
-    }, 1200);
+    // Statuses come only from real backend events; no timer-driven phases.
+    void phase;
+    const phaseTimer: number | undefined = undefined;
     let fetchPhaseTimer: number | undefined;
     let researchPhaseTimer: number | undefined;
 
@@ -355,8 +355,7 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
 
     if (isWebAnalysis) {
       clearTimeout(phaseTimer);
-      fetchPhaseTimer = window.setTimeout(() => setThinkingPhase("fetching"), 1200);
-      researchPhaseTimer = window.setTimeout(() => setThinkingPhase("researching"), 3500);
+
     }
 
     // Regular chat - send to backend, response will come via Realtime
@@ -628,7 +627,7 @@ const ChatWorkspace = ({ tool, onMenuClick, initialMessages, chatId: externalCha
                 isNew={newMessageIds.has(msg.id)}
               />
             ))}
-            {isTyping && <TypingIndicator phase={thinkingPhase} label={taskState ? STAGE_LABELS[taskState.stage] : undefined} detail={taskState?.message} done={taskState?.history.slice(0, -1)} />}
+            {isTyping && <TypingIndicator phase={thinkingPhase} label={taskState ? STAGE_LABELS[taskState.stage] : undefined} detail={taskState?.message} />}
           </div>
         ) : (
           <EmptyState tool={tool} />
