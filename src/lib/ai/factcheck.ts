@@ -126,7 +126,7 @@ export function judgeClaim(id: number, claim: string, evidence: Evidence[], now 
       if (overlap >= 0.75 && allTerms) verdict = polarityFlip ? "conflict" : "support";
       else verdict = "partial";
     }
-    if (verdict === "support" && (!e.fullPage || e.stale)) verdict = "partial"; // snippet alone or outdated → never proof
+    if (verdict !== "partial" && (!e.fullPage || e.stale)) verdict = "partial"; // snippet alone or outdated → never proof either way
     (verdict === "support" ? support : verdict === "conflict" ? conflict : partial).push(e);
   }
   // Independence: one vote per domain, and identical passages on different domains count once.
@@ -143,6 +143,7 @@ export function judgeClaim(id: number, claim: string, evidence: Evidence[], now 
   return { id, claim, status, support, conflict, excerpt: best?.passage.slice(0, 280), checkedAt: now, ...(reason ? { reason } : {}) };
 }
 
+const UNREADABLE = /^news\.google\.com$/;
 export type SearchHit = { title: string; url: string; snippet: string };
 export type FactCheckDeps = {
   search: (query: string) => Promise<{ ok: boolean; results: SearchHit[] }>;
@@ -171,10 +172,12 @@ async function verify(text: string, deps: FactCheckDeps, cache: Cache) {
     const r = cache.searches.get(q)!;
     if (!r.ok) searchFailed = true;
     const seen = new Set<string>();
-    return [...r.results, ...(deps.initial ?? [])].filter((h) => h.url && !seen.has(h.url) && seen.add(h.url)).slice(0, FACTCHECK_LIMITS.resultsPerClaim + 2);
+    // Readable, higher-quality sources first; news-aggregator redirect pages can't be read as full text.
+    const rank = (h: SearchHit) => (UNREADABLE.test(domainOf(h.url)) ? -1 : sourceQuality(h.url));
+    return [...r.results, ...(deps.initial ?? [])].filter((h) => h.url && !seen.has(h.url) && seen.add(h.url)).sort((a, b) => rank(b) - rank(a)).slice(0, FACTCHECK_LIMITS.resultsPerClaim + 2);
   });
   // Full pages, each fetched at most once per answer, within the page budget.
-  const toRead = [...new Set(hitsPer.flatMap((h) => h.slice(0, FACTCHECK_LIMITS.resultsPerClaim).map((x) => x.url)))].filter((u) => !cache.pages.has(u));
+  const toRead = [...new Set(hitsPer.flatMap((h) => h.slice(0, FACTCHECK_LIMITS.resultsPerClaim).map((x) => x.url)))].filter((u) => !cache.pages.has(u) && !UNREADABLE.test(domainOf(u)));
   const budget = Math.max(0, FACTCHECK_LIMITS.maxPages - cache.pages.size);
   const reading = deps.fetchPage ? toRead.slice(0, budget) : [];
   if (reading.length) emit("reading_sources", `Reading ${reading.length} source${reading.length === 1 ? "" : "s"}`);
@@ -232,7 +235,7 @@ export function disclosure(records: ClaimRecord[], uncheckedCount: number, searc
     count("contradicted") && `${count("contradicted")} contradicted`,
     count("unverified") && `${count("unverified")} not confirmed`,
   ].filter(Boolean).join(", ");
-  const scope = `Fact-check: ${records.length} key statement${records.length === 1 ? " was" : "s were"} checked against source pages (${parts}).${uncheckedCount ? ` ${uncheckedCount} other statement${uncheckedCount === 1 ? " was" : "s were"} not checked.` : ""}${searchFailed ? " Web search was partly unavailable." : ""}`;
+  const scope = `Fact-check: ${records.length} key statement${records.length === 1 ? " was" : "s were"} checked against sources (${parts}).${uncheckedCount ? ` ${uncheckedCount} other statement${uncheckedCount === 1 ? " was" : "s were"} not checked.` : ""}${searchFailed ? " Web search was partly unavailable." : ""}`;
   const mark: Record<ClaimStatus, string> = { verified: "Confirmed", partial: "Partly supported", conflicting: "Sources conflict", contradicted: "Contradicted", unverified: "Not confirmed" };
   const lines = records.map((r) => {
     const srcs = [...new Map((r.status === "contradicted" || r.status === "conflicting" ? [...r.support, ...r.conflict] : r.support.length ? r.support : r.conflict).map((e) => [e.url, e])).values()].slice(0, 2);
